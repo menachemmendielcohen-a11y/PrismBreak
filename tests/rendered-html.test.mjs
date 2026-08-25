@@ -1,11 +1,6 @@
 import assert from "node:assert/strict";
-import { access, readFile, readdir } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
-
-const developmentPreviewMeta =
-  /<meta(?=[^>]*\bname=["']codex-preview["'])(?=[^>]*\bcontent=["']development["'])[^>]*>/i;
-const templateRoot = new URL("../", import.meta.url);
-const previewRoot = new URL("../app/_sites-preview/", import.meta.url);
 
 async function render() {
   const workerUrl = new URL("../dist/server/index.js", import.meta.url);
@@ -28,64 +23,45 @@ async function render() {
   );
 }
 
-test("server-renders the starter loading skeleton", async () => {
+test("server-renders the PRISM BREAK campaign shell", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
-  assert.match(html, developmentPreviewMeta);
-  assert.match(html, /<title>Your site is taking shape<\/title>/i);
-  assert.match(html, /Building your site/);
-  assert.match(html, /Your site is taking shape/);
-  assert.match(
-    html,
-    /Your first version will appear here automatically when it’s ready\./,
-  );
-  assert.doesNotMatch(html, /Codex/);
-  assert.match(html, /react-loading-skeleton/);
-  assert.match(html, /role="status"/);
+  assert.match(html, /<title>PRISM BREAK — Absorb the Storm<\/title>/i);
+  assert.match(html, /aria-label="PRISM BREAK game arena"/i);
+  assert.match(html, /ENTER CAMPAIGN/);
+  assert.match(html, /DAILY RIFT/);
+  assert.match(html, /ARCADE RIFT/);
+  assert.match(html, /GLOBAL COMPETITION/);
+  assert.doesNotMatch(html, /codex-preview|Your site is taking shape/i);
 });
 
-test("keeps the loading skeleton scoped and disposable", async () => {
-  const [preview, css, page, layout, packageJson, files] = await Promise.all([
-    readFile(new URL("SkeletonPreview.tsx", previewRoot), "utf8"),
-    readFile(new URL("preview.css", previewRoot), "utf8"),
-    readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
-    readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
-    readFile(new URL("../package.json", import.meta.url), "utf8"),
-    readdir(previewRoot),
+test("keeps progression and the D1 leaderboard wired into the production app", async () => {
+  const [game, hosting, schema, scoresRoute, migration] = await Promise.all([
+    readFile(new URL("../app/PrismBreak.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../.openai/hosting.json", import.meta.url), "utf8"),
+    readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/scores/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../drizzle/0000_sour_blindfold.sql", import.meta.url), "utf8"),
   ]);
 
-  assert.deepEqual(files.sort(), ["SkeletonPreview.tsx", "preview.css"]);
-  assert.match(preview, /from "react-loading-skeleton"/);
-  assert.match(preview, /baseColor="#eceae7"/);
-  assert.match(preview, /highlightColor="#f9f8f6"/);
-  assert.match(preview, /duration=\{2\.8\}/);
-  assert.match(preview, /sites-skeleton-search-placeholder/);
-  assert.match(packageJson, /"react-loading-skeleton": "3\.5\.0"/);
+  assert.equal((game.match(/id:\s*[0-5],\s*code:/g) ?? []).length, 6);
+  assert.match(game, /type RunMode = "campaign" \| "daily" \| "arcade"/);
+  assert.match(game, /type Difficulty = "cadet" \| "standard" \| "overdrive"/);
+  assert.match(game, /prism-break-profile-v2/);
+  assert.match(game, /type DropKind = "repair" \| "overcharge" \| "rapid" \| "smashcell"/);
+  assert.match(game, /const DEFAULT_BINDINGS/);
+  assert.match(game, /function triggerSmash/);
+  assert.match(game, /prism-break-bindings-v1/);
+  assert.match(game, /fetch\("\/api\/scores"/);
 
-  const shellIndex = preview.indexOf('className="sites-skeleton-shell"');
-  const statusIndex = preview.indexOf('className="sites-skeleton-status"');
-  assert.ok(shellIndex >= 0 && statusIndex > shellIndex);
-  assert.match(css, /position:\s*fixed/);
-  assert.match(css, /inset:\s*0/);
-  assert.match(css, /opacity:\s*0\.52/);
-  assert.match(css, /prefers-reduced-motion:\s*reduce/);
-  assert.doesNotMatch(css, /#020617|canvas|pets|progress/i);
-  assert.doesNotMatch(
-    preview,
-    /loading-spinner|status-mark|status-progress|canvas|cookie|random/i,
-  );
-
-  assert.match(page, /export const metadata:\s*Metadata/);
-  assert.match(page, /"codex-preview": "development"/);
-  assert.match(page, /<SkeletonPreview \/>/);
-  assert.match(layout, /title:\s*"Starter Project"/);
-  assert.doesNotMatch(layout, /codex-preview|_sites-preview|themeColor|\bViewport\b/);
-  assert.doesNotMatch(css, /(^|\s)(html|body)\s*\{/m);
-
-  await assert.rejects(
-    access(new URL("public/_sites-preview", templateRoot)),
-  );
+  assert.equal(JSON.parse(hosting).d1, "DB");
+  assert.match(schema, /sqliteTable\(\s*"scores"/);
+  assert.match(schema, /scores_leaderboard_idx/);
+  assert.match(scoresRoute, /\.prepare\(/);
+  assert.match(scoresRoute, /PILOT-/);
+  assert.match(migration, /CREATE TABLE `scores`/);
+  assert.match(migration, /PRAGMA optimize;/);
 });

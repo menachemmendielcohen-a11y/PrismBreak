@@ -13,6 +13,91 @@ type Mode = "menu" | "playing" | "paused" | "upgrade" | "gameover" | "victory";
 type EnemyKind = "needle" | "halo" | "splitter" | "lancer" | "bulwark" | "boss";
 type Sfx = "shoot" | "hit" | "kill" | "dash" | "absorb" | "nova" | "hurt" | "level" | "boss" | "pickup";
 type UpgradeId = "split" | "rapid" | "heavy" | "chain" | "magnet" | "wake" | "phase" | "guard" | "glass" | "second";
+type DropKind = "repair" | "overcharge" | "rapid" | "smashcell";
+type BindingAction = "up" | "down" | "left" | "right" | "dash" | "nova" | "smash" | "pause";
+type RunMode = "campaign" | "daily" | "arcade";
+type Difficulty = "cadet" | "standard" | "overdrive";
+type ObjectiveKind = "survive" | "kills" | "absorb" | "elites" | "boss";
+type MenuView = "home" | "campaign" | "daily" | "arcade";
+
+interface StageDefinition {
+  id: number;
+  code: string;
+  name: string;
+  subtitle: string;
+  briefing: string;
+  duration: number;
+  bossTime: number | null;
+  roster: EnemyKind[];
+  objective: ObjectiveKind;
+  target: number;
+  eliteChance: number;
+  scoreTargets: [number, number, number];
+}
+
+interface DifficultyProfile {
+  id: Difficulty;
+  name: string;
+  description: string;
+  health: number;
+  enemySpeed: number;
+  bulletSpeed: number;
+  spawnRate: number;
+  enemyHealth: number;
+  scoreMultiplier: number;
+  dashCooldown: number;
+  dashDuration: number;
+  absorbCharge: number;
+}
+
+type KeyBindings = Record<BindingAction, string>;
+
+const DEFAULT_BINDINGS: KeyBindings = {
+  up: "KeyW", down: "KeyS", left: "KeyA", right: "KeyD",
+  dash: "Space", nova: "KeyE", smash: "KeyF", pause: "KeyP",
+};
+
+const DROP_INFO: Record<DropKind, { name: string; color: string; glyph: string }> = {
+  repair: { name: "REPAIR SHARD", color: "#8affcf", glyph: "+" },
+  overcharge: { name: "NOVA CELL", color: "#ffe486", glyph: "N" },
+  rapid: { name: "RAPID MODULE", color: "#a98cff", glyph: "R" },
+  smashcell: { name: "SMASH CELL", color: "#ff80c8", glyph: "S" },
+};
+
+interface RunConfig {
+  runMode: RunMode;
+  stageId: number;
+  difficulty: Difficulty;
+  duration: number;
+  bossTime: number | null;
+  roster: EnemyKind[];
+  objective: ObjectiveKind;
+  objectiveTarget: number;
+  eliteChance: number;
+  label: string;
+  dailyKey: string | null;
+}
+
+interface LeaderboardRow {
+  id: number;
+  callsign: string;
+  score: number;
+  mode: RunMode;
+  stage: number;
+  difficulty: Difficulty;
+  kills: number;
+  absorbed: number;
+  comboX100: number;
+  createdAt: string;
+  rank?: number;
+}
+
+interface PlayerProfile {
+  unlockedStage: number;
+  overdriveUnlocked: boolean;
+  stars: Record<string, number>;
+  bestScores: Record<string, number>;
+}
 
 interface Player {
   x: number;
@@ -80,6 +165,17 @@ interface Pickup {
   dead: boolean;
 }
 
+interface PowerDrop {
+  id: number;
+  kind: DropKind;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  age: number;
+  dead: boolean;
+}
+
 interface Particle {
   x: number;
   y: number;
@@ -111,6 +207,7 @@ interface Game {
   enemies: Enemy[];
   bullets: Bullet[];
   pickups: Pickup[];
+  powerDrops: PowerDrop[];
   particles: Particle[];
   texts: FloatText[];
   score: number;
@@ -126,16 +223,24 @@ interface Game {
   upgradeChoices: UpgradeId[];
   upgrades: Partial<Record<UpgradeId, number>>;
   kills: number;
+  eliteKills: number;
   absorbed: number;
+  hitsTaken: number;
+  novasUsed: number;
   bestCombo: number;
   shake: number;
   flash: number;
   nova: number;
+  smashCooldown: number;
+  smashPulse: number;
+  rapidBuff: number;
   hitStop: number;
   events: Sfx[];
   uiClock: number;
   reason: string;
   reducedMotion: boolean;
+  config: RunConfig;
+  runId: string;
 }
 
 interface InputState {
@@ -146,6 +251,8 @@ interface InputState {
   usingTouch: boolean;
   dash: boolean;
   nova: boolean;
+  smash: boolean;
+  bindings: KeyBindings;
   stickId: number | null;
   aimId: number | null;
   stickOriginX: number;
@@ -182,6 +289,8 @@ interface UiState {
   shield: number;
   charge: number;
   dash: number;
+  smash: number;
+  rapidBuff: number;
   level: number;
   xp: number;
   nextXp: number;
@@ -190,10 +299,21 @@ interface UiState {
   bossHealth: number;
   bossMaxHealth: number;
   choices: UpgradeId[];
+  upgrades: Partial<Record<UpgradeId, number>>;
   kills: number;
+  eliteKills: number;
   absorbed: number;
+  hitsTaken: number;
+  novasUsed: number;
   bestCombo: number;
   reason: string;
+  runMode: RunMode;
+  stageId: number;
+  difficulty: Difficulty;
+  objectiveLabel: string;
+  objectiveProgress: number;
+  objectiveTarget: number;
+  guide: string;
 }
 
 const UPGRADES: Record<UpgradeId, UpgradeInfo> = {
@@ -218,6 +338,106 @@ const ENEMY_COLOR: Record<EnemyKind, string> = {
   boss: "#ad7bff",
 };
 
+const DIFFICULTIES: Record<Difficulty, DifficultyProfile> = {
+  cadet: {
+    id: "cadet", name: "CADET", description: "Forgiving shields, slower fire, faster dash.",
+    health: 5, enemySpeed: 0.84, bulletSpeed: 0.76, spawnRate: 0.76,
+    enemyHealth: 0.86, scoreMultiplier: 0.78, dashCooldown: 0.9, dashDuration: 0.29, absorbCharge: 6,
+  },
+  standard: {
+    id: "standard", name: "STANDARD", description: "The intended PRISM BREAK experience.",
+    health: 3, enemySpeed: 1, bulletSpeed: 1, spawnRate: 1,
+    enemyHealth: 1, scoreMultiplier: 1, dashCooldown: 1.18, dashDuration: 0.23, absorbCharge: 4.2,
+  },
+  overdrive: {
+    id: "overdrive", name: "OVERDRIVE", description: "Relentless patterns and amplified scoring.",
+    health: 2, enemySpeed: 1.14, bulletSpeed: 1.16, spawnRate: 1.28,
+    enemyHealth: 1.15, scoreMultiplier: 1.45, dashCooldown: 1.24, dashDuration: 0.21, absorbCharge: 3.8,
+  },
+};
+
+const CAMPAIGN_STAGES: StageDefinition[] = [
+  {
+    id: 0, code: "00", name: "CALIBRATION", subtitle: "Learn the light",
+    briefing: "A protected training chamber teaches movement, phase absorption, and Nova release.",
+    duration: 28, bossTime: null, roster: ["needle", "halo"], objective: "survive", target: 28,
+    eliteChance: 0, scoreTargets: [1800, 4200, 7600],
+  },
+  {
+    id: 1, code: "01", name: "FIRST CONTACT", subtitle: "Hold the perimeter",
+    briefing: "Needles breach the arena while Halos establish a crossfire. Survive the first incursion.",
+    duration: 42, bossTime: null, roster: ["needle", "halo"], objective: "survive", target: 42,
+    eliteChance: 0, scoreTargets: [5200, 11000, 20000],
+  },
+  {
+    id: 2, code: "02", name: "CROSSFIRE", subtitle: "Break the formation",
+    briefing: "Splitters seed the arena with new threats. Destroy the formation before the timer collapses.",
+    duration: 68, bossTime: null, roster: ["needle", "halo", "splitter"], objective: "kills", target: 32,
+    eliteChance: 0.07, scoreTargets: [18000, 34000, 56000],
+  },
+  {
+    id: 3, code: "03", name: "FRACTURE", subtitle: "Feed on the storm",
+    briefing: "Lancers weaponize the grid. Phase through their fire and absorb enough energy to fracture it.",
+    duration: 76, bossTime: null, roster: ["needle", "halo", "splitter", "lancer"], objective: "absorb", target: 35,
+    eliteChance: 0.11, scoreTargets: [28000, 51000, 82000],
+  },
+  {
+    id: 4, code: "04", name: "SIEGE", subtitle: "Hunt the elites",
+    briefing: "Bulwarks seal the exits. Eliminate six elite signatures and collapse the siege lattice.",
+    duration: 88, bossTime: null, roster: ["needle", "halo", "splitter", "lancer", "bulwark"], objective: "elites", target: 6,
+    eliteChance: 0.24, scoreTargets: [45000, 78000, 118000],
+  },
+  {
+    id: 5, code: "05", name: "THE APERTURE", subtitle: "End the protocol",
+    briefing: "The architect enters the arena. Survive its rings, reach the core, and break the Aperture.",
+    duration: 120, bossTime: 76, roster: ["needle", "halo", "splitter", "lancer", "bulwark"], objective: "boss", target: 1,
+    eliteChance: 0.16, scoreTargets: [72000, 125000, 190000],
+  },
+];
+
+const DEFAULT_PROFILE: PlayerProfile = {
+  unlockedStage: 0,
+  overdriveUnlocked: false,
+  stars: {},
+  bestScores: {},
+};
+
+function currentDailyKey() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function seedFromText(value: string) {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function makeRunConfig(runMode: RunMode, stageId = 0, difficulty: Difficulty = "cadet", dailyKey: string | null = null): RunConfig {
+  if (runMode === "campaign") {
+    const stage = CAMPAIGN_STAGES[clamp(Math.round(stageId), 0, CAMPAIGN_STAGES.length - 1)];
+    return {
+      runMode, stageId: stage.id, difficulty, duration: stage.duration, bossTime: stage.bossTime,
+      roster: stage.roster, objective: stage.objective, objectiveTarget: stage.target,
+      eliteChance: stage.eliteChance, label: `STAGE ${stage.code} // ${stage.name}`, dailyKey: null,
+    };
+  }
+  if (runMode === "daily") {
+    return {
+      runMode, stageId: -1, difficulty: "standard", duration: 135, bossTime: 96,
+      roster: ["needle", "halo", "splitter", "lancer", "bulwark"], objective: "boss", objectiveTarget: 1,
+      eliteChance: 0.13, label: "DAILY RIFT // GLOBAL SEED", dailyKey: dailyKey ?? currentDailyKey(),
+    };
+  }
+  return {
+    runMode, stageId: -1, difficulty, duration: RUN_TIME, bossTime: BOSS_TIME,
+    roster: ["needle", "halo", "splitter", "lancer", "bulwark"], objective: "boss", objectiveTarget: 1,
+    eliteChance: 0.1, label: "ARCADE RIFT // SCORE ATTACK", dailyKey: null,
+  };
+}
+
 const STAR_FIELD = Array.from({ length: 150 }, (_, index) => ({
   x: (index * 79.731) % WORLD_W,
   y: (index * 43.117) % WORLD_H,
@@ -228,9 +448,11 @@ const STAR_FIELD = Array.from({ length: 150 }, (_, index) => ({
 
 const EMPTY_UI: UiState = {
   mode: "menu", score: 0, combo: 1, health: 3, maxHealth: 3, shield: 0,
-  charge: 0, dash: 1, level: 1, xp: 0, nextXp: 12, timeLeft: RUN_TIME,
-  wave: "CALIBRATION", bossHealth: 0, bossMaxHealth: 0, choices: [], kills: 0,
-  absorbed: 0, bestCombo: 1, reason: "",
+  charge: 0, dash: 1, smash: 1, rapidBuff: 0, level: 1, xp: 0, nextXp: 12, timeLeft: RUN_TIME,
+  wave: "CALIBRATION", bossHealth: 0, bossMaxHealth: 0, choices: [], upgrades: {}, kills: 0,
+  eliteKills: 0, absorbed: 0, hitsTaken: 0, novasUsed: 0, bestCombo: 1, reason: "",
+  runMode: "campaign", stageId: 0, difficulty: "cadet", objectiveLabel: "SURVIVE CALIBRATION",
+  objectiveProgress: 0, objectiveTarget: CAMPAIGN_STAGES[0].target, guide: "",
 };
 
 function clamp(value: number, min: number, max: number) {
@@ -252,15 +474,16 @@ function rand(game: Game) {
   return (game.rng & 0xffffff) / 0x1000000;
 }
 
-function createInput(): InputState {
+function createInput(bindings: KeyBindings = DEFAULT_BINDINGS): InputState {
   return {
     keys: {}, pointerX: WORLD_W * 0.72, pointerY: WORLD_H * 0.5, hasPointer: false,
-    usingTouch: false, dash: false, nova: false, stickId: null, aimId: null,
+    usingTouch: false, dash: false, nova: false, smash: false, bindings, stickId: null, aimId: null,
     stickOriginX: 0, stickOriginY: 0, stickWorldX: 0, stickWorldY: 0, stickX: 0, stickY: 0,
   };
 }
 
-function createGame(seed: number, mode: Mode = "menu"): Game {
+function createGame(seed: number, mode: Mode = "menu", config: RunConfig = makeRunConfig("campaign", 0, "cadet")): Game {
+  const difficulty = DIFFICULTIES[config.difficulty];
   return {
     mode,
     visualTime: 0,
@@ -269,24 +492,54 @@ function createGame(seed: number, mode: Mode = "menu"): Game {
     nextId: 1,
     player: {
       x: WORLD_W * 0.5, y: WORLD_H * 0.56, vx: 0, vy: 0, r: 14,
-      health: 3, maxHealth: 3, invuln: 0, dashTime: 0, dashCooldown: 0,
-      fireCooldown: 0, aim: 0, wakeClock: 0, shield: 0, secondUsed: false,
+      health: difficulty.health, maxHealth: difficulty.health, invuln: 0, dashTime: 0, dashCooldown: 0,
+      fireCooldown: 0, aim: 0, wakeClock: 0, shield: config.runMode === "campaign" && config.stageId <= 1 ? 1 : 0, secondUsed: false,
     },
-    enemies: [], bullets: [], pickups: [], particles: [], texts: [],
-    score: 0, combo: 1, comboTimer: 0, charge: 0, level: 1, xp: 0, nextXp: 12,
+    enemies: [], bullets: [], pickups: [], powerDrops: [], particles: [], texts: [],
+    score: 0, combo: 1, comboTimer: 0, charge: config.stageId === 0 ? 82 : config.stageId === 1 ? 28 : 0, level: 1, xp: 0, nextXp: 12,
     spawnTimer: 0.7, bossSpawned: false, bossDefeated: false, upgradeChoices: [], upgrades: {},
-    kills: 0, absorbed: 0, bestCombo: 1, shake: 0, flash: 0, nova: 0, hitStop: 0,
-    events: [], uiClock: 0, reason: "", reducedMotion: false,
+    kills: 0, eliteKills: 0, absorbed: 0, hitsTaken: 0, novasUsed: 0, bestCombo: 1,
+    shake: 0, flash: 0, nova: 0, smashCooldown: 0, smashPulse: 0, rapidBuff: 0, hitStop: 0,
+    events: [], uiClock: 0, reason: "", reducedMotion: false, config,
+    runId: `menu-${seed.toString(36)}`,
   };
 }
 
-function waveLabel(elapsed: number, bossSpawned: boolean) {
-  if (bossSpawned) return "THE APERTURE";
+function waveLabel(game: Game) {
+  if (game.config.runMode === "campaign") return game.config.label;
+  if (game.bossSpawned) return "THE APERTURE";
+  const elapsed = game.elapsed;
   if (elapsed < 24) return "WAVE 01 — FIRST CONTACT";
   if (elapsed < 50) return "WAVE 02 — CROSSFIRE";
   if (elapsed < 76) return "WAVE 03 — FRACTURE";
   if (elapsed < 94) return "WAVE 04 — SIEGE";
   return "FINAL WAVE — PRISM STORM";
+}
+
+function objectiveProgress(game: Game) {
+  if (game.config.objective === "survive") return Math.min(game.elapsed, game.config.objectiveTarget);
+  if (game.config.objective === "kills") return game.kills;
+  if (game.config.objective === "absorb") return game.absorbed;
+  if (game.config.objective === "elites") return game.eliteKills;
+  return game.bossDefeated ? 1 : 0;
+}
+
+function objectiveLabel(game: Game) {
+  if (game.config.objective === "survive") return "SURVIVE THE SEQUENCE";
+  if (game.config.objective === "kills") return "DESTROY HOSTILES";
+  if (game.config.objective === "absorb") return "ABSORB ENEMY FIRE";
+  if (game.config.objective === "elites") return "ELIMINATE ELITES";
+  return "BREAK THE APERTURE";
+}
+
+function guideText(game: Game) {
+  if (game.config.runMode !== "campaign" || game.config.stageId !== 0 || game.mode !== "playing") return "";
+  if (game.elapsed < 6) return "MOVE WITH WASD OR THE LEFT TOUCH FIELD";
+  if (game.elapsed < 13) return "YOUR PRISM AUTO-FIRES AT THE NEAREST THREAT";
+  if (game.absorbed < 3) return "PRESS SPACE AND DASH THROUGH PINK BULLETS TO ABSORB THEM";
+  if (game.charge < 100) return "KEEP ABSORBING — FILL THE PRISM CORE";
+  if (game.novasUsed < 1) return "CORE READY — PRESS E TO RELEASE PRISM NOVA";
+  return "CALIBRATION COMPLETE — HOLD THE ARENA";
 }
 
 function event(game: Game, sound: Sfx) {
@@ -333,11 +586,13 @@ function spawnEnemy(game: Game, kind: EnemyKind, x?: number, y?: number, elite =
     boss: { r: 74, hp: 520, fire: 1.15 },
   };
   const stat = stats[kind];
-  const hp = stat.hp * (kind === "boss" ? 1 : scale) * (elite ? 1.8 : 1);
+  const trainingTarget = game.config.runMode === "campaign" && game.config.stageId === 0 && kind === "halo";
+  const firstMissionTarget = game.config.runMode === "campaign" && game.config.stageId === 1;
+  const hp = stat.hp * (kind === "boss" ? 1 : scale) * (elite ? 1.8 : 1) * DIFFICULTIES[game.config.difficulty].enemyHealth * (trainingTarget ? 4.2 : firstMissionTarget ? 0.68 : 1);
   game.enemies.push({
     id: game.nextId++, kind, x: x ?? position.x, y: y ?? position.y,
     vx: 0, vy: 0, r: stat.r * (elite ? 1.18 : 1), hp, maxHp: hp,
-    fire: stat.fire + rand(game) * 0.55, age: 0, angle: rand(game) * TAU,
+    fire: trainingTarget ? 0.58 + rand(game) * 0.18 : firstMissionTarget ? stat.fire + 0.75 + rand(game) * 0.5 : stat.fire + rand(game) * 0.55, age: 0, angle: rand(game) * TAU,
     hit: 0, elite, dead: false, processed: false,
   });
   if (kind === "boss") {
@@ -350,13 +605,13 @@ function spawnEnemy(game: Game, kind: EnemyKind, x?: number, y?: number, elite =
 }
 
 function selectEnemyKind(game: Game): EnemyKind {
-  const time = game.elapsed;
-  const roll = rand(game);
-  if (time < 22) return roll < 0.8 ? "needle" : "halo";
-  if (time < 48) return roll < 0.45 ? "needle" : roll < 0.78 ? "halo" : "splitter";
-  if (time < 76) return roll < 0.28 ? "needle" : roll < 0.52 ? "halo" : roll < 0.79 ? "splitter" : "lancer";
-  if (time < 96) return roll < 0.22 ? "needle" : roll < 0.43 ? "halo" : roll < 0.64 ? "lancer" : roll < 0.84 ? "splitter" : "bulwark";
-  return roll < 0.18 ? "needle" : roll < 0.38 ? "halo" : roll < 0.58 ? "lancer" : roll < 0.78 ? "splitter" : "bulwark";
+  const roster = game.config.roster.filter((kind) => kind !== "boss");
+  if (roster.length === 0) return "needle";
+  const progress = clamp(game.elapsed / Math.max(1, game.config.duration * 0.45), 0, 1);
+  const unlockedCount = Math.max(1, Math.min(roster.length, 1 + Math.floor(progress * roster.length)));
+  const pool = roster.slice(0, unlockedCount);
+  const index = Math.min(pool.length - 1, Math.floor(Math.pow(rand(game), 0.82) * pool.length));
+  return pool[index];
 }
 
 function addBullet(game: Game, x: number, y: number, angle: number, speed: number, enemy: boolean, damage: number, options?: Partial<Bullet>) {
@@ -399,12 +654,14 @@ function firePlayer(game: Game) {
     addBullet(game, player.x, player.y, player.aim - spread, 760, false, damage * 0.72, { r: 3.7, color: "#b986ff" });
     addBullet(game, player.x, player.y, player.aim + spread, 760, false, damage * 0.72, { r: 3.7, color: "#ff7fcf" });
   }
-  player.fireCooldown = 0.145 * Math.pow(0.82, game.upgrades.rapid ?? 0);
+  const boost = game.rapidBuff > 0 ? 0.52 : 1;
+  player.fireCooldown = 0.145 * Math.pow(0.82, game.upgrades.rapid ?? 0) * boost;
   event(game, "shoot");
 }
 
 function spawnEnemyBullet(game: Game, enemy: Enemy, angle: number, speed: number, color = ENEMY_COLOR[enemy.kind], r = 6) {
-  addBullet(game, enemy.x + Math.cos(angle) * (enemy.r + 5), enemy.y + Math.sin(angle) * (enemy.r + 5), angle, speed, true, 1, { color, r });
+  const projectileSpeed = speed * DIFFICULTIES[game.config.difficulty].bulletSpeed;
+  addBullet(game, enemy.x + Math.cos(angle) * (enemy.r + 5), enemy.y + Math.sin(angle) * (enemy.r + 5), angle, projectileSpeed, true, 1, { color, r });
 }
 
 function segmentCircle(bullet: Bullet, x: number, y: number, radius: number) {
@@ -433,13 +690,43 @@ function addPickup(game: Game, x: number, y: number, value: number) {
   game.pickups.push({ id: game.nextId++, x, y, vx: Math.cos(angle) * force, vy: Math.sin(angle) * force, value, age: 0, dead: false });
 }
 
+function addPowerDrop(game: Game, x: number, y: number, kind: DropKind) {
+  const angle = rand(game) * TAU;
+  const force = 55 + rand(game) * 95;
+  game.powerDrops.push({ id: game.nextId++, kind, x, y, vx: Math.cos(angle) * force, vy: Math.sin(angle) * force, age: 0, dead: false });
+  shockwave(game, x, y, DROP_INFO[kind].color, 12);
+}
+
+function collectPowerDrop(game: Game, drop: PowerDrop) {
+  if (drop.dead) return;
+  drop.dead = true;
+  const player = game.player;
+  const info = DROP_INFO[drop.kind];
+  if (drop.kind === "repair") {
+    player.health = Math.min(player.maxHealth, player.health + 1);
+    player.shield = Math.min(2, player.shield + 0.55);
+  } else if (drop.kind === "overcharge") {
+    game.charge = Math.min(100, game.charge + 48);
+  } else if (drop.kind === "rapid") {
+    game.rapidBuff = Math.max(game.rapidBuff, 11);
+  } else {
+    game.smashCooldown = Math.max(0, game.smashCooldown - 9);
+  }
+  game.score += Math.round(180 * DIFFICULTIES[game.config.difficulty].scoreMultiplier);
+  game.texts.push({ x: drop.x, y: drop.y - 22, text: info.name, color: info.color, life: 1.15 });
+  burst(game, drop.x, drop.y, info.color, 18, 220, 3.8);
+  shockwave(game, drop.x, drop.y, info.color, 22);
+  event(game, "pickup");
+}
+
 function processEnemyDeath(game: Game, enemy: Enemy) {
   if (enemy.processed) return;
   enemy.processed = true;
   const base: Record<EnemyKind, number> = { needle: 100, halo: 240, splitter: 360, lancer: 420, bulwark: 650, boss: 12000 };
-  const points = Math.round(base[enemy.kind] * game.combo * (enemy.elite ? 1.8 : 1));
+  const points = Math.round(base[enemy.kind] * game.combo * (enemy.elite ? 1.8 : 1) * DIFFICULTIES[game.config.difficulty].scoreMultiplier);
   game.score += points;
   game.kills += 1;
+  if (enemy.elite) game.eliteKills += 1;
   game.combo = Math.min(8, game.combo + (enemy.kind === "boss" ? 1 : 0.25));
   game.comboTimer = 2.6;
   game.bestCombo = Math.max(game.bestCombo, game.combo);
@@ -452,6 +739,16 @@ function processEnemyDeath(game: Game, enemy: Enemy) {
 
   if (enemy.kind === "splitter") {
     for (let i = 0; i < 3; i += 1) spawnEnemy(game, "needle", enemy.x + Math.cos(i * TAU / 3) * 18, enemy.y + Math.sin(i * TAU / 3) * 18);
+  }
+
+  if (enemy.kind !== "boss") {
+    const firstMission = game.config.runMode === "campaign" && game.config.stageId === 1;
+    const dropChance = firstMission ? 0.32 : enemy.elite ? 0.38 : 0.12;
+    if (rand(game) < dropChance) {
+      const roll = rand(game);
+      const kind: DropKind = roll < 0.31 ? "repair" : roll < 0.58 ? "overcharge" : roll < 0.82 ? "rapid" : "smashcell";
+      addPowerDrop(game, enemy.x, enemy.y, kind);
+    }
   }
 
   const shardCount = enemy.kind === "boss" ? 18 : enemy.kind === "bulwark" ? 4 : enemy.kind === "needle" ? 1 : 2;
@@ -473,7 +770,7 @@ function processEnemyDeath(game: Game, enemy: Enemy) {
   if (enemy.kind === "boss") {
     game.bossDefeated = true;
     game.mode = "victory";
-    game.score += Math.max(0, Math.round((RUN_TIME - game.elapsed) * 160));
+    game.score += Math.max(0, Math.round((game.config.duration - game.elapsed) * 160 * DIFFICULTIES[game.config.difficulty].scoreMultiplier));
     game.reason = "THE APERTURE IS SHATTERED";
   }
 }
@@ -489,6 +786,7 @@ function hurtPlayer(game: Game) {
     return;
   }
   player.health -= 1;
+  game.hitsTaken += 1;
   player.invuln = 1.05;
   game.combo = 1;
   game.comboTimer = 0;
@@ -504,6 +802,10 @@ function hurtPlayer(game: Game) {
       game.charge = 100;
       game.texts.push({ x: player.x, y: player.y - 35, text: "SECOND LIGHT", color: "#fff3a4", life: 1.4 });
       shockwave(game, player.x, player.y, "#fff3a4", 30);
+    } else if (game.config.runMode === "campaign" && game.config.stageId === 0) {
+      player.health = player.maxHealth;
+      player.invuln = 2.4;
+      game.texts.push({ x: player.x, y: player.y - 35, text: "TRAINING SAFEGUARD", color: "#8ffcff", life: 1.4 });
     } else {
       game.mode = "gameover";
       game.reason = "PRISM INTEGRITY LOST";
@@ -514,8 +816,9 @@ function hurtPlayer(game: Game) {
 function absorbBullet(game: Game, bullet: Bullet) {
   bullet.dead = true;
   game.absorbed += 1;
-  game.charge = Math.min(100, game.charge + 4.2);
-  const points = Math.round(28 * game.combo);
+  game.charge = Math.min(100, game.charge + DIFFICULTIES[game.config.difficulty].absorbCharge);
+  if (game.config.runMode === "campaign" && game.config.stageId === 0 && game.absorbed >= 3) game.charge = 100;
+  const points = Math.round(28 * game.combo * DIFFICULTIES[game.config.difficulty].scoreMultiplier);
   game.score += points;
   game.comboTimer = Math.max(game.comboTimer, 1.1);
   burst(game, bullet.x, bullet.y, "#8ffcff", 6, 150, 2.8);
@@ -531,6 +834,7 @@ function absorbBullet(game: Game, bullet: Bullet) {
 function triggerNova(game: Game) {
   if (game.charge < 100 || game.mode !== "playing") return;
   game.charge = 0;
+  game.novasUsed += 1;
   game.nova = 1;
   game.flash = 1;
   game.shake = 24;
@@ -543,14 +847,42 @@ function triggerNova(game: Game) {
     }
   }
   for (const enemy of game.enemies) damageEnemy(game, enemy, enemy.kind === "boss" ? 42 : 30);
-  game.score += cleared * 12;
+  game.score += Math.round(cleared * 12 * DIFFICULTIES[game.config.difficulty].scoreMultiplier);
   if ((game.upgrades.guard ?? 0) > 0) game.player.shield = Math.min(2, game.player.shield + 1);
   shockwave(game, game.player.x, game.player.y, "#ffffff", 45);
   event(game, "nova");
 }
 
+function triggerSmash(game: Game) {
+  if (game.smashCooldown > 0 || game.mode !== "playing") return;
+  const player = game.player;
+  const radius = 310;
+  game.smashCooldown = 20;
+  game.smashPulse = 1;
+  game.flash = 1;
+  game.shake = 30;
+  for (const bullet of game.bullets) {
+    if (bullet.enemy && !bullet.dead && distanceSq(player.x, player.y, bullet.x, bullet.y) < radius * radius) bullet.dead = true;
+  }
+  for (const enemy of game.enemies) {
+    if (enemy.dead || distanceSq(player.x, player.y, enemy.x, enemy.y) > radius * radius) continue;
+    damageEnemy(game, enemy, enemy.kind === "boss" ? 92 : 120);
+  }
+  game.texts.push({ x: player.x, y: player.y - 48, text: "PRISM SMASH", color: "#fff0a3", life: 1.1 });
+  burst(game, player.x, player.y, "#fff0a3", 48, 390, 5);
+  shockwave(game, player.x, player.y, "#fff0a3", 46);
+  shockwave(game, player.x, player.y, "#ff87d7", 26);
+  event(game, "nova");
+}
+
 function chooseUpgradeSet(game: Game) {
-  const eligible = (Object.keys(UPGRADES) as UpgradeId[]).filter((id) => (game.upgrades[id] ?? 0) < UPGRADES[id].max);
+  const basePool: UpgradeId[] = ["split", "rapid", "heavy", "magnet", "phase", "second"];
+  const stage = game.config.runMode === "campaign" ? game.config.stageId : 5;
+  if (stage >= 2) basePool.push("chain");
+  if (stage >= 3) basePool.push("wake");
+  if (stage >= 4) basePool.push("guard");
+  if (stage >= 5) basePool.push("glass");
+  const eligible = basePool.filter((id) => (game.upgrades[id] ?? 0) < UPGRADES[id].max);
   const choices: UpgradeId[] = [];
   while (choices.length < 3 && eligible.length > 0) {
     const index = Math.floor(rand(game) * eligible.length);
@@ -655,15 +987,32 @@ function updateEnemy(game: Game, enemy: Enemy, dt: number) {
   const damping = Math.exp(-dt * (enemy.kind === "boss" ? 2.4 : 3.5));
   enemy.vx *= damping;
   enemy.vy *= damping;
-  enemy.x += enemy.vx * dt;
-  enemy.y += enemy.vy * dt;
+  const movementScale = DIFFICULTIES[game.config.difficulty].enemySpeed;
+  enemy.x += enemy.vx * dt * movementScale;
+  enemy.y += enemy.vy * dt * movementScale;
   enemy.x = clamp(enemy.x, 40, WORLD_W - 40);
   enemy.y = clamp(enemy.y, 55, WORLD_H - 40);
+}
+
+function completeCampaignObjective(game: Game) {
+  if (game.config.runMode !== "campaign" || game.mode !== "playing") return false;
+  const progress = objectiveProgress(game);
+  const complete = progress >= game.config.objectiveTarget;
+  if (!complete) return false;
+  const remaining = Math.max(0, game.config.duration - game.elapsed);
+  game.score += Math.round(remaining * 90 * DIFFICULTIES[game.config.difficulty].scoreMultiplier);
+  game.mode = "victory";
+  game.reason = game.config.stageId === 0 ? "CALIBRATION COMPLETE" : "MISSION OBJECTIVE COMPLETE";
+  game.flash = 0.85;
+  game.shake = 12;
+  event(game, "level");
+  return true;
 }
 
 function updateGame(game: Game, input: InputState, dt: number) {
   if (game.mode !== "playing") return;
   const player = game.player;
+  const difficulty = DIFFICULTIES[game.config.difficulty];
   game.elapsed += dt;
   game.uiClock += dt;
   game.comboTimer = Math.max(0, game.comboTimer - dt);
@@ -673,31 +1022,46 @@ function updateGame(game: Game, input: InputState, dt: number) {
   player.fireCooldown -= dt;
   player.shield = Math.max(0, player.shield - dt * 0.035);
   game.nova = Math.max(0, game.nova - dt * 1.25);
+  game.smashCooldown = Math.max(0, game.smashCooldown - dt);
+  game.smashPulse = Math.max(0, game.smashPulse - dt * 1.45);
+  game.rapidBuff = Math.max(0, game.rapidBuff - dt);
   game.flash = Math.max(0, game.flash - dt * 2.5);
   game.shake = Math.max(0, game.shake - dt * 28);
 
-  if (!game.bossSpawned && game.elapsed >= BOSS_TIME) {
-    for (const enemy of game.enemies) if (enemy.kind !== "boss") enemy.dead = true;
+  if (completeCampaignObjective(game)) return;
+
+  if (!game.bossSpawned && game.config.bossTime !== null && game.elapsed >= game.config.bossTime) {
+    for (const enemy of game.enemies) {
+      if (enemy.kind !== "boss") {
+        enemy.processed = true;
+        enemy.dead = true;
+      }
+    }
     spawnEnemy(game, "boss");
   }
 
-  if (game.elapsed >= RUN_TIME && !game.bossDefeated) {
+  if (game.elapsed >= game.config.duration && !game.bossDefeated) {
     game.mode = "gameover";
-    game.reason = "THE RIFT COLLAPSED";
+    game.reason = game.config.stageId === 0 ? "COMPLETE THE NOVA SEQUENCE" : "THE RIFT COLLAPSED";
     return;
   }
 
   game.spawnTimer -= dt;
-  if (!game.bossSpawned && game.spawnTimer <= 0 && game.enemies.length < 38) {
+  const firstMission = game.config.runMode === "campaign" && game.config.stageId === 1;
+  const maxEnemies = firstMission ? 12 : game.config.difficulty === "cadet" ? 28 : game.config.difficulty === "overdrive" ? 46 : 38;
+  if (!game.bossSpawned && game.spawnTimer <= 0 && game.enemies.length < maxEnemies && (game.config.stageId !== 0 || game.elapsed > 4)) {
     const kind = selectEnemyKind(game);
-    const elite = game.elapsed > 55 && rand(game) < 0.08;
+    const eliteScale = game.config.difficulty === "cadet" ? 0.45 : game.config.difficulty === "overdrive" ? 1.45 : 1;
+    const elite = game.elapsed > Math.min(24, game.config.duration * 0.38) && rand(game) < game.config.eliteChance * eliteScale;
     spawnEnemy(game, kind, undefined, undefined, elite);
-    if (game.elapsed > 70 && rand(game) < 0.24) spawnEnemy(game, rand(game) < 0.7 ? "needle" : "halo");
-    game.spawnTimer = Math.max(0.25, 0.82 - game.elapsed * 0.0045) * (0.78 + rand(game) * 0.5);
+    if (game.elapsed > game.config.duration * 0.55 && rand(game) < 0.24) spawnEnemy(game, rand(game) < 0.7 ? "needle" : "halo");
+    const baseInterval = Math.max(0.25, 0.84 - game.elapsed * 0.0045) * (0.78 + rand(game) * 0.5);
+    const trainingScale = game.config.stageId === 0 ? 1.38 : firstMission ? 1.72 : 1;
+    game.spawnTimer = baseInterval * trainingScale / difficulty.spawnRate;
   }
 
-  let moveX = (input.keys.KeyD || input.keys.ArrowRight ? 1 : 0) - (input.keys.KeyA || input.keys.ArrowLeft ? 1 : 0);
-  let moveY = (input.keys.KeyS || input.keys.ArrowDown ? 1 : 0) - (input.keys.KeyW || input.keys.ArrowUp ? 1 : 0);
+  let moveX = (input.keys[input.bindings.right] ? 1 : 0) - (input.keys[input.bindings.left] ? 1 : 0);
+  let moveY = (input.keys[input.bindings.down] ? 1 : 0) - (input.keys[input.bindings.up] ? 1 : 0);
   if (input.stickId !== null) {
     moveX += input.stickX;
     moveY += input.stickY;
@@ -720,9 +1084,9 @@ function updateGame(game: Game, input: InputState, dt: number) {
     const length = Math.max(0.001, Math.hypot(dashX, dashY));
     player.vx = dashX / length * 980;
     player.vy = dashY / length * 980;
-    player.dashTime = 0.23;
-    player.dashCooldown = 1.18 * Math.pow(0.82, game.upgrades.phase ?? 0);
-    player.invuln = Math.max(player.invuln, 0.25);
+    player.dashTime = difficulty.dashDuration;
+    player.dashCooldown = difficulty.dashCooldown * Math.pow(0.82, game.upgrades.phase ?? 0);
+    player.invuln = Math.max(player.invuln, difficulty.dashDuration + 0.02);
     game.shake = Math.max(game.shake, 8);
     burst(game, player.x, player.y, "#80f8ff", 15, 230, 3);
     event(game, "dash");
@@ -730,6 +1094,8 @@ function updateGame(game: Game, input: InputState, dt: number) {
   input.dash = false;
   if (input.nova) triggerNova(game);
   input.nova = false;
+  if (input.smash) triggerSmash(game);
+  input.smash = false;
 
   if (player.dashTime > 0) {
     player.dashTime = Math.max(0, player.dashTime - dt);
@@ -807,9 +1173,28 @@ function updateGame(game: Game, input: InputState, dt: number) {
     if (distance < player.r + 13) {
       pickup.dead = true;
       game.xp += pickup.value;
-      game.score += 15 * pickup.value;
+      game.score += Math.round(15 * pickup.value * difficulty.scoreMultiplier);
       event(game, "pickup");
     }
+  }
+
+  for (const drop of game.powerDrops) {
+    if (drop.dead) continue;
+    drop.age += dt;
+    const dx = player.x - drop.x;
+    const dy = player.y - drop.y;
+    const distance = Math.max(1, Math.hypot(dx, dy));
+    const pullRadius = 155 + (game.upgrades.magnet ?? 0) * 85;
+    if (distance < pullRadius || drop.age > 7) {
+      const force = 920 * (1 - Math.min(distance / (pullRadius * 1.35), 0.82));
+      drop.vx += dx / distance * force * dt;
+      drop.vy += dy / distance * force * dt;
+    }
+    drop.vx *= Math.exp(-dt * 2.1);
+    drop.vy *= Math.exp(-dt * 2.1);
+    drop.x += drop.vx * dt;
+    drop.y += drop.vy * dt;
+    if (distance < player.r + 18) collectPowerDrop(game, drop);
   }
 
   for (const bullet of game.bullets) {
@@ -861,10 +1246,13 @@ function updateGame(game: Game, input: InputState, dt: number) {
   game.enemies = game.enemies.filter((enemy) => !enemy.dead);
   game.bullets = game.bullets.filter((bullet) => !bullet.dead);
   game.pickups = game.pickups.filter((pickup) => !pickup.dead);
+  game.powerDrops = game.powerDrops.filter((drop) => !drop.dead);
   game.particles = game.particles.filter((particle) => particle.life > 0);
   game.texts = game.texts.filter((text) => text.life > 0);
 
-  if (game.xp >= game.nextXp && game.mode === "playing" && !game.bossDefeated) {
+  if (completeCampaignObjective(game)) return;
+
+  if (game.xp >= game.nextXp && game.mode === "playing" && !game.bossDefeated && game.config.stageId !== 0) {
     game.xp -= game.nextXp;
     game.level += 1;
     game.nextXp = Math.round(10 + game.level * 5.5);
@@ -878,7 +1266,7 @@ function updateGame(game: Game, input: InputState, dt: number) {
 
 function snapshot(game: Game): UiState {
   const boss = game.enemies.find((enemy) => enemy.kind === "boss");
-  const dashTotal = 1.18 * Math.pow(0.82, game.upgrades.phase ?? 0);
+  const dashTotal = DIFFICULTIES[game.config.difficulty].dashCooldown * Math.pow(0.82, game.upgrades.phase ?? 0);
   return {
     mode: game.mode,
     score: Math.round(game.score),
@@ -888,18 +1276,31 @@ function snapshot(game: Game): UiState {
     shield: game.player.shield,
     charge: game.charge,
     dash: 1 - clamp(game.player.dashCooldown / dashTotal, 0, 1),
+    smash: 1 - clamp(game.smashCooldown / 20, 0, 1),
+    rapidBuff: game.rapidBuff,
     level: game.level,
     xp: game.xp,
     nextXp: game.nextXp,
-    timeLeft: Math.max(0, RUN_TIME - game.elapsed),
-    wave: waveLabel(game.elapsed, game.bossSpawned),
+    timeLeft: Math.max(0, game.config.duration - game.elapsed),
+    wave: waveLabel(game),
     bossHealth: boss?.hp ?? 0,
     bossMaxHealth: boss?.maxHp ?? 0,
     choices: game.upgradeChoices,
+    upgrades: { ...game.upgrades },
     kills: game.kills,
+    eliteKills: game.eliteKills,
     absorbed: game.absorbed,
+    hitsTaken: game.hitsTaken,
+    novasUsed: game.novasUsed,
     bestCombo: game.bestCombo,
     reason: game.reason,
+    runMode: game.config.runMode,
+    stageId: game.config.stageId,
+    difficulty: game.config.difficulty,
+    objectiveLabel: objectiveLabel(game),
+    objectiveProgress: objectiveProgress(game),
+    objectiveTarget: game.config.objectiveTarget,
+    guide: guideText(game),
   };
 }
 
@@ -1217,6 +1618,43 @@ function renderGame(ctx: CanvasRenderingContext2D, game: Game, view: Viewport, i
       ctx.restore();
     }
 
+    for (const drop of game.powerDrops) {
+      const info = DROP_INFO[drop.kind];
+      const pulse = 1 + Math.sin(game.visualTime * 6 + drop.id) * 0.13;
+      ctx.save();
+      ctx.translate(drop.x, drop.y);
+      ctx.rotate(game.visualTime * 1.7 + drop.id);
+      ctx.fillStyle = info.color;
+      ctx.strokeStyle = "#ffffff";
+      ctx.shadowColor = info.color;
+      ctx.shadowBlur = 22;
+      polygon(ctx, 6, 10 * pulse, Math.PI / 6);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.rotate(-game.visualTime * 1.7 - drop.id);
+      ctx.fillStyle = "#061017";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.font = "700 8px Geist Mono, monospace";
+      ctx.fillText(info.glyph, 0, 0.5);
+      ctx.restore();
+    }
+
+    if (game.smashPulse > 0) {
+      const radius = (1 - game.smashPulse) * 420;
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.strokeStyle = `rgba(255,231,145,${game.smashPulse * 0.9})`;
+      ctx.lineWidth = 7 * game.smashPulse + 2;
+      ctx.beginPath(); ctx.arc(game.player.x, game.player.y, Math.max(2, radius), 0, TAU); ctx.stroke();
+      ctx.strokeStyle = `rgba(255,111,202,${game.smashPulse * 0.65})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(game.player.x, game.player.y, Math.max(2, radius * 0.72), 0, TAU); ctx.stroke();
+      ctx.restore();
+    }
+
     if (game.enemies.some((enemy) => enemy.kind === "lancer" && enemy.fire < 0.52)) {
       ctx.save();
       ctx.setLineDash([7, 10]);
@@ -1382,15 +1820,36 @@ function formatScore(score: number) {
   return Math.round(score).toString().padStart(7, "0");
 }
 
+function scoreStars(stageId: number, score: number) {
+  const stage = CAMPAIGN_STAGES[stageId];
+  if (!stage) return 0;
+  return stage.scoreTargets.reduce((total, target) => total + (score >= target ? 1 : 0), 0);
+}
+
+function profileRecordKey(runMode: RunMode, stageId: number, difficulty: Difficulty, dailyKey: string | null = null) {
+  return [runMode, stageId, difficulty, dailyKey ?? "all"].join(":");
+}
+
+function displayKey(code: string) {
+  if (code === "Space") return "SPACE";
+  if (code.startsWith("Key")) return code.slice(3).toUpperCase();
+  if (code.startsWith("Arrow")) return code.slice(5).toUpperCase();
+  return code.replace("Digit", "");
+}
+
 export default function PrismBreak() {
   const shellRef = useRef<HTMLElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const gameRef = useRef<Game>(createGame(0x51f15e, "menu"));
   const inputRef = useRef<InputState>(createInput());
+  const bindingsRef = useRef<KeyBindings>(DEFAULT_BINDINGS);
+  const bindingCaptureRef = useRef<BindingAction | null>(null);
   const viewRef = useRef<Viewport>({ width: WORLD_W, height: WORLD_H, dpr: 1, scale: 1, offsetX: 0, offsetY: 0 });
   const audioRef = useRef<AudioEngine | null>(null);
   const rafRef = useRef(0);
   const resultSavedRef = useRef(false);
+  const progressionSavedRef = useRef(false);
+  const scoreSubmittedRef = useRef(false);
   const prefsRef = useRef({ sound: true, reduced: false, contrast: false });
 
   const [ui, setUi] = useState<UiState>(EMPTY_UI);
@@ -1398,17 +1857,67 @@ export default function PrismBreak() {
   const [reducedMotion, setReducedMotion] = useState(false);
   const [highContrast, setHighContrast] = useState(false);
   const [bestScore, setBestScore] = useState(0);
+  const [menuView, setMenuView] = useState<MenuView>("home");
+  const [selectedStage, setSelectedStage] = useState(0);
+  const [difficulty, setDifficulty] = useState<Difficulty>("cadet");
+  const [profile, setProfile] = useState<PlayerProfile>(DEFAULT_PROFILE);
+  const [leaderboard, setLeaderboard] = useState<LeaderboardRow[]>([]);
+  const [leaderboardLoading, setLeaderboardLoading] = useState(false);
+  const [leaderboardError, setLeaderboardError] = useState("");
+  const [runRank, setRunRank] = useState<number | null>(null);
+  const [resultStars, setResultStars] = useState(0);
+  const [bindings, setBindings] = useState<KeyBindings>(DEFAULT_BINDINGS);
+  const [capturingBinding, setCapturingBinding] = useState<BindingAction | null>(null);
+  const [controlsOpen, setControlsOpen] = useState(false);
 
   const publish = useCallback(() => setUi(snapshot(gameRef.current)), []);
+  const startBindingCapture = useCallback((action: BindingAction) => {
+    bindingCaptureRef.current = action;
+    setCapturingBinding(action);
+  }, []);
 
   useEffect(() => {
-    try {
-      setBestScore(Number(localStorage.getItem("prism-break-best") || 0));
-      const muted = localStorage.getItem("prism-break-sound") === "off";
-      const reduced = localStorage.getItem("prism-break-motion") === "reduced" || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      setSound(!muted);
-      setReducedMotion(reduced);
-    } catch { /* storage is optional */ }
+    const frame = requestAnimationFrame(() => {
+      try {
+        const storedBest = Number(localStorage.getItem("prism-break-best") || 0);
+        setBestScore(Number.isFinite(storedBest) && storedBest > 0 ? Math.round(storedBest) : 0);
+        const storedProfile = JSON.parse(localStorage.getItem("prism-break-profile-v2") || "null") as Partial<PlayerProfile> | null;
+        if (storedProfile) {
+          const stars = Object.entries(storedProfile.stars ?? {}).reduce<Record<string, number>>((records, [key, value]) => {
+            if (typeof value === "number" && Number.isFinite(value)) records[key] = clamp(Math.round(value), 0, 3);
+            return records;
+          }, {});
+          const bestScores = Object.entries(storedProfile.bestScores ?? {}).reduce<Record<string, number>>((records, [key, value]) => {
+            if (typeof value === "number" && Number.isFinite(value) && value >= 0) records[key] = Math.round(value);
+            return records;
+          }, {});
+          const nextProfile: PlayerProfile = {
+            unlockedStage: clamp(Number(storedProfile.unlockedStage) || 0, 0, CAMPAIGN_STAGES.length - 1),
+            overdriveUnlocked: Boolean(storedProfile.overdriveUnlocked),
+            stars,
+            bestScores,
+          };
+          setProfile(nextProfile);
+          setSelectedStage(nextProfile.unlockedStage);
+        }
+        const muted = localStorage.getItem("prism-break-sound") === "off";
+        const reduced = localStorage.getItem("prism-break-motion") === "reduced" || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        setSound(!muted);
+        setReducedMotion(reduced);
+        const storedBindings = JSON.parse(localStorage.getItem("prism-break-bindings-v1") || "null") as Partial<KeyBindings> | null;
+        if (storedBindings) {
+          const nextBindings = (Object.keys(DEFAULT_BINDINGS) as BindingAction[]).reduce<KeyBindings>((next, action) => {
+            const candidate = storedBindings[action];
+            next[action] = typeof candidate === "string" && candidate.length > 0 ? candidate : DEFAULT_BINDINGS[action];
+            return next;
+          }, { ...DEFAULT_BINDINGS });
+          bindingsRef.current = nextBindings;
+          inputRef.current.bindings = nextBindings;
+          setBindings(nextBindings);
+        }
+      } catch { /* storage is optional */ }
+    });
+    return () => cancelAnimationFrame(frame);
   }, []);
 
   useEffect(() => {
@@ -1419,6 +1928,95 @@ export default function PrismBreak() {
       localStorage.setItem("prism-break-motion", reducedMotion ? "reduced" : "full");
     } catch { /* storage is optional */ }
   }, [sound, reducedMotion, highContrast]);
+
+  const loadLeaderboard = useCallback(async (config: RunConfig) => {
+    setLeaderboardLoading(true);
+    setLeaderboardError("");
+    try {
+      const query = new URLSearchParams({ mode: config.runMode, limit: "8" });
+      if (config.runMode === "campaign") {
+        query.set("stage", String(config.stageId));
+        query.set("difficulty", config.difficulty);
+      } else if (config.runMode === "daily") {
+        query.set("date", config.dailyKey ?? currentDailyKey());
+      } else {
+        query.set("difficulty", config.difficulty);
+      }
+      const response = await fetch(`/api/scores?${query.toString()}`, { credentials: "same-origin" });
+      if (!response.ok) throw new Error(`Leaderboard ${response.status}`);
+      const data = await response.json() as { scores?: LeaderboardRow[] };
+      setLeaderboard((data.scores ?? []).map((row, index) => ({ ...row, rank: row.rank ?? index + 1 })));
+    } catch {
+      setLeaderboard([]);
+      setLeaderboardError("GLOBAL LINK OFFLINE — LOCAL RECORDS STILL SAVE");
+    } finally {
+      setLeaderboardLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (ui.mode !== "menu" || menuView === "home") return;
+    const config = menuView === "campaign"
+      ? makeRunConfig("campaign", selectedStage, difficulty)
+      : menuView === "daily"
+        ? makeRunConfig("daily", -1, "standard", currentDailyKey())
+        : makeRunConfig("arcade", -1, difficulty);
+    const timer = window.setTimeout(() => void loadLeaderboard(config), 0);
+    return () => window.clearTimeout(timer);
+  }, [difficulty, loadLeaderboard, menuView, selectedStage, ui.mode]);
+
+  useEffect(() => {
+    if (ui.mode !== "gameover" && ui.mode !== "victory") return;
+    const game = gameRef.current;
+    const config = game.config;
+    if (!progressionSavedRef.current) {
+      progressionSavedRef.current = true;
+      const stars = config.runMode === "campaign" && ui.mode === "victory"
+        ? Math.max(1, scoreStars(config.stageId, ui.score))
+        : 0;
+      setResultStars(stars);
+      setProfile((previous) => {
+        const key = profileRecordKey(config.runMode, config.stageId, config.difficulty, config.dailyKey);
+        const stageKey = `${config.stageId}:${config.difficulty}`;
+        const campaignClear = config.runMode === "campaign" && ui.mode === "victory";
+        const next: PlayerProfile = {
+          unlockedStage: campaignClear ? Math.max(previous.unlockedStage, Math.min(CAMPAIGN_STAGES.length - 1, config.stageId + 1)) : previous.unlockedStage,
+          overdriveUnlocked: previous.overdriveUnlocked || (campaignClear && config.stageId === CAMPAIGN_STAGES.length - 1),
+          stars: campaignClear ? { ...previous.stars, [stageKey]: Math.max(previous.stars[stageKey] ?? 0, stars) } : previous.stars,
+          bestScores: { ...previous.bestScores, [key]: Math.max(previous.bestScores[key] ?? 0, ui.score) },
+        };
+        try { localStorage.setItem("prism-break-profile-v2", JSON.stringify(next)); } catch { /* optional */ }
+        return next;
+      });
+    }
+
+    if (scoreSubmittedRef.current) return;
+    scoreSubmittedRef.current = true;
+    const submittedRunId = game.runId;
+    void (async () => {
+      try {
+        const response = await fetch("/api/scores", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify({
+            score: Math.round(game.score), mode: config.runMode, stage: config.stageId,
+            difficulty: config.difficulty, kills: game.kills, absorbed: game.absorbed,
+            comboX100: Math.round(game.bestCombo * 100), durationMs: Math.round(game.elapsed * 1000),
+            completed: ui.mode === "victory", dailyKey: config.dailyKey,
+          }),
+        });
+        if (!response.ok) throw new Error(`Submission ${response.status}`);
+        const data = await response.json() as { rank?: number; score?: LeaderboardRow };
+        if (gameRef.current.runId === submittedRunId) {
+          setRunRank(data.rank ?? data.score?.rank ?? null);
+          await loadLeaderboard(config);
+        }
+      } catch {
+        if (gameRef.current.runId === submittedRunId) setLeaderboardError("SCORE SAVED LOCALLY — GLOBAL UPLINK UNAVAILABLE");
+      }
+    })();
+  }, [loadLeaderboard, ui.mode, ui.score]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -1455,12 +2053,31 @@ export default function PrismBreak() {
 
     const onKeyDown = (eventValue: KeyboardEvent) => {
       const input = inputRef.current;
+      const capture = bindingCaptureRef.current;
+      if (capture) {
+        eventValue.preventDefault();
+        if (eventValue.code !== "Escape") {
+          setBindings((previous) => {
+            const next = { ...previous, [capture]: eventValue.code };
+            const swapped = (Object.keys(previous) as BindingAction[]).find((action) => action !== capture && previous[action] === eventValue.code);
+            if (swapped) next[swapped] = previous[capture];
+            bindingsRef.current = next;
+            inputRef.current.bindings = next;
+            try { localStorage.setItem("prism-break-bindings-v1", JSON.stringify(next)); } catch { /* optional */ }
+            return next;
+          });
+        }
+        bindingCaptureRef.current = null;
+        setCapturingBinding(null);
+        return;
+      }
       input.keys[eventValue.code] = true;
       const game = gameRef.current;
-      if (["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(eventValue.code) && game.mode !== "menu") eventValue.preventDefault();
-      if (!eventValue.repeat && eventValue.code === "Space") input.dash = true;
-      if (!eventValue.repeat && (eventValue.code === "KeyE" || eventValue.code === "KeyQ")) input.nova = true;
-      if (!eventValue.repeat && (eventValue.code === "KeyP" || eventValue.code === "Escape")) {
+      if (Object.values(input.bindings).includes(eventValue.code) && game.mode !== "menu") eventValue.preventDefault();
+      if (!eventValue.repeat && eventValue.code === input.bindings.dash) input.dash = true;
+      if (!eventValue.repeat && eventValue.code === input.bindings.nova) input.nova = true;
+      if (!eventValue.repeat && eventValue.code === input.bindings.smash) input.smash = true;
+      if (!eventValue.repeat && (eventValue.code === input.bindings.pause || eventValue.code === "Escape")) {
         if (game.mode === "playing") game.mode = "paused";
         else if (game.mode === "paused") game.mode = "playing";
         publish();
@@ -1600,20 +2217,45 @@ export default function PrismBreak() {
     };
   }, [publish]);
 
-  const startGame = useCallback(() => {
-    const seed = (performance.now() * 1000) ^ 0xa5a5a5;
-    const game = createGame(seed >>> 0, "playing");
+  const launchGame = useCallback((runMode: RunMode, stageId = 0, requestedDifficulty: Difficulty = difficulty) => {
+    const dailyKey = runMode === "daily" ? currentDailyKey() : null;
+    const safeDifficulty = runMode === "daily"
+      ? "standard"
+      : requestedDifficulty === "overdrive" && !profile.overdriveUnlocked ? "standard" : requestedDifficulty;
+    const config = makeRunConfig(runMode, stageId, safeDifficulty, dailyKey);
+    const seed = runMode === "daily"
+      ? seedFromText(`PRISM-BREAK-DAILY:${dailyKey}`)
+      : (((performance.now() * 1000) ^ seedFromText(`${runMode}:${stageId}:${safeDifficulty}`)) >>> 0);
+    const game = createGame(seed, "playing", config);
+    game.runId = typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID() : `${Date.now()}-${seed}`;
     game.reducedMotion = prefsRef.current.reduced;
     gameRef.current = game;
-    inputRef.current = createInput();
+    inputRef.current = createInput(bindingsRef.current);
     resultSavedRef.current = false;
+    progressionSavedRef.current = false;
+    scoreSubmittedRef.current = false;
+    setRunRank(null);
+    setResultStars(0);
+    setLeaderboardError("");
     void audioRef.current?.unlock();
     setUi(snapshot(game));
-  }, []);
+  }, [difficulty, profile.overdriveUnlocked]);
+
+  const replayGame = useCallback(() => {
+    const config = gameRef.current.config;
+    launchGame(config.runMode, config.stageId, config.difficulty);
+  }, [launchGame]);
 
   const returnToMenu = useCallback(() => {
-    gameRef.current = createGame(0x51f15e, "menu");
-    inputRef.current = createInput();
+    bindingCaptureRef.current = null;
+    setCapturingBinding(null);
+    setControlsOpen(false);
+    const previousConfig = gameRef.current.config;
+    setMenuView(previousConfig.runMode === "campaign" ? "campaign" : previousConfig.runMode);
+    if (previousConfig.runMode === "campaign") setSelectedStage(previousConfig.stageId);
+    if (previousConfig.runMode !== "daily") setDifficulty(previousConfig.difficulty);
+    gameRef.current = createGame(0x51f15e, "menu", previousConfig);
+    inputRef.current = createInput(bindingsRef.current);
     setUi(snapshot(gameRef.current));
   }, []);
 
@@ -1638,8 +2280,48 @@ export default function PrismBreak() {
     else void document.exitFullscreen?.();
   }, []);
 
-  const tutorialVisible = ui.mode === "playing" && ui.timeLeft > RUN_TIME - 10;
+  const tutorialVisible = ui.mode === "playing" && Boolean(ui.guide);
   const isEnd = ui.mode === "gameover" || ui.mode === "victory";
+  const activeStage = CAMPAIGN_STAGES[selectedStage];
+  const selectedConfig = menuView === "campaign"
+    ? makeRunConfig("campaign", selectedStage, difficulty)
+    : menuView === "daily"
+      ? makeRunConfig("daily", -1, "standard", currentDailyKey())
+      : makeRunConfig("arcade", -1, difficulty);
+  const localRecord = profile.bestScores[profileRecordKey(selectedConfig.runMode, selectedConfig.stageId, selectedConfig.difficulty, selectedConfig.dailyKey)] ?? 0;
+  const totalStars = Object.values(profile.stars).reduce((total, stars) => total + stars, 0);
+  const difficultySelector = (
+    <div className="difficulty-selector" aria-label="Difficulty">
+      {(Object.keys(DIFFICULTIES) as Difficulty[]).map((id) => {
+        const locked = id === "overdrive" && !profile.overdriveUnlocked;
+        return (
+          <button key={id} className={difficulty === id ? "is-selected" : ""} disabled={locked} onClick={() => setDifficulty(id)}>
+            <span>{DIFFICULTIES[id].name}</span>
+            <small>{locked ? "CLEAR STAGE 05" : id === "cadet" ? "RECOMMENDED" : `${DIFFICULTIES[id].scoreMultiplier.toFixed(2)}× SCORE`}</small>
+          </button>
+        );
+      })}
+    </div>
+  );
+  const leaderboardPanel = (
+    <aside className="leaderboard-panel" aria-label="Global leaderboard">
+      <div className="leaderboard-heading"><span>GLOBAL RANKING</span><small>{"LIVE // TOP 8"}</small></div>
+      {leaderboardLoading ? <p className="leaderboard-status">SYNCING PRISM SIGNALS…</p> : leaderboardError ? <p className="leaderboard-status is-error">{leaderboardError}</p> : leaderboard.length === 0 ? (
+        <p className="leaderboard-status">NO SIGNALS YET — CLAIM RANK 01</p>
+      ) : (
+        <ol className="leaderboard-list">
+          {leaderboard.map((row, index) => (
+            <li key={`${row.id}-${index}`}>
+              <b>{String(row.rank ?? index + 1).padStart(2, "0")}</b>
+              <span>{row.callsign || "UNKNOWN PRISM"}</span>
+              <strong>{formatScore(row.score)}</strong>
+            </li>
+          ))}
+        </ol>
+      )}
+      <div className="local-record"><span>YOUR RECORD</span><strong>{formatScore(localRecord)}</strong></div>
+    </aside>
+  );
 
   return (
     <main ref={shellRef} className={`game-shell prism-game ${highContrast ? "is-high-contrast" : ""}`}>
@@ -1651,7 +2333,7 @@ export default function PrismBreak() {
         <section className="menu-screen">
           <header className="menu-nav">
             <div className="game-logo" aria-label="Prism Break"><span>PB</span></div>
-            <p>PRISM PROTOCOL <b>// 01</b></p>
+            <p>PRISM PROTOCOL <b>{"// 02"}</b></p>
             <div className="menu-tools">
               <button className={sound ? "is-active" : ""} onClick={() => setSound((value) => !value)} aria-pressed={sound}>
                 <span className="tool-dot" />{sound ? "SOUND ON" : "SOUND OFF"}
@@ -1661,30 +2343,95 @@ export default function PrismBreak() {
             </div>
           </header>
 
-          <div className="menu-content">
-            <div className="menu-kicker"><span>ARCADE SURVIVAL</span><i /> <span>BUILD 01</span></div>
-            <h1 className="game-title"><span>PRISM</span><span>BREAK</span></h1>
-            <p className="game-tagline">Dash through the storm. Absorb hostile fire. Become the weapon.</p>
-            <div className="menu-actions">
-              <button className="launch-button" onClick={startGame}>
-                <span><small>INITIATE SEQUENCE</small>ENTER THE RIFT</span>
-                <b>↗</b>
-              </button>
-              <div className="best-score"><small>PERSONAL BEST</small><strong>{formatScore(bestScore)}</strong></div>
+          {menuView === "home" ? (
+            <div className="menu-content home-content">
+              <div className="menu-kicker"><span>{"CAMPAIGN // GLOBAL COMPETITION"}</span><i /><span>BUILD 02</span></div>
+              <h1 className="game-title"><span>PRISM</span><span>BREAK</span></h1>
+              <p className="game-tagline">Six missions. Three difficulty circuits. One global ranking. Learn the prism, master the storm, break the Aperture.</p>
+              <div className="menu-actions">
+                <button className="launch-button" onClick={() => { setSelectedStage(profile.unlockedStage); setMenuView("campaign"); }}>
+                  <span><small>{profile.unlockedStage === 0 ? "BEGIN WITH CALIBRATION" : `CONTINUE AT STAGE ${String(profile.unlockedStage).padStart(2, "0")}`}</small>ENTER CAMPAIGN</span>
+                  <b>→</b>
+                </button>
+                <div className="best-score"><small>LIFETIME BEST</small><strong>{formatScore(bestScore)}</strong></div>
+              </div>
+              <div className="mode-card-grid" aria-label="Game modes">
+                <button onClick={() => setMenuView("campaign")}><small>{"01 // PROGRESSION"}</small><strong>CAMPAIGN</strong><span>{profile.unlockedStage + 1}/6 STAGES · {totalStars} PRISM STARS</span></button>
+                <button onClick={() => setMenuView("daily")}><small>{"02 // SAME SEED"}</small><strong>DAILY RIFT</strong><span>{currentDailyKey()} · GLOBAL BOARD</span></button>
+                <button onClick={() => setMenuView("arcade")}><small>{"03 // ENDLESS MASTERY"}</small><strong>ARCADE RIFT</strong><span>150 SEC · FULL APERTURE RUN</span></button>
+              </div>
             </div>
-            <div className="control-grid" aria-label="Controls">
-              <div><kbd>WASD</kbd><span><b>VECTOR</b>Move through the arena</span></div>
-              <div><kbd>SPACE</kbd><span><b>PHASE</b>Dash through bullets</span></div>
-              <div><kbd>E</kbd><span><b>NOVA</b>Release at full charge</span></div>
-            </div>
-          </div>
+          ) : (
+            <div className="mode-menu">
+              <div className="mode-menu-heading">
+                <button className="back-button" onClick={() => setMenuView("home")}>← TITLE</button>
+                <div><small>{menuView === "campaign" ? "PRISM PROTOCOL // SIX MISSIONS" : menuView === "daily" ? "SYNCHRONIZED GLOBAL EVENT" : "UNBOUNDED SCORE ATTACK"}</small><h2>{menuView === "campaign" ? "CAMPAIGN" : menuView === "daily" ? "DAILY RIFT" : "ARCADE RIFT"}</h2></div>
+                <div className="profile-summary"><span>STARS</span><strong>{String(totalStars).padStart(2, "0")}</strong><small>{profile.overdriveUnlocked ? "OVERDRIVE ONLINE" : "OVERDRIVE LOCKED"}</small></div>
+              </div>
 
-          <aside className="menu-lore">
-            <span>THE APERTURE</span>
-            <strong>LEARNS<br />EVERY MOVE.</strong>
-            <p>Survive long enough to teach it fear.</p>
-          </aside>
-          <footer className="menu-footer"><span>001</span><i /><span>ABSORB · REFRACT · ASCEND</span></footer>
+              {menuView === "campaign" && (
+                <>
+                  {difficultySelector}
+                  <div className="stage-path" aria-label="Campaign stages">
+                    {CAMPAIGN_STAGES.map((stage) => {
+                      const locked = stage.id > profile.unlockedStage;
+                      const stars = profile.stars[`${stage.id}:${difficulty}`] ?? 0;
+                      return (
+                        <button key={stage.id} disabled={locked} className={`${selectedStage === stage.id ? "is-selected" : ""} ${locked ? "is-locked" : ""}`} onClick={() => setSelectedStage(stage.id)}>
+                          <span>{locked ? "LOCK" : stage.code}</span><i /><small>{stage.name}</small><b>{locked ? "◇◇◇" : `${"◆".repeat(stars)}${"◇".repeat(3 - stars)}`}</b>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="mission-layout">
+                    <section className="mission-brief">
+                      <p>{`STAGE ${activeStage.code} // ${activeStage.subtitle.toUpperCase()}`}</p>
+                      <h3>{activeStage.name}</h3>
+                      <span>{activeStage.briefing}</span>
+                      <div className="mission-specs">
+                        <div><small>PRIMARY OBJECTIVE</small><strong>{activeStage.objective === "survive" ? `SURVIVE ${activeStage.target}s` : activeStage.objective === "kills" ? `DESTROY ${activeStage.target}` : activeStage.objective === "absorb" ? `ABSORB ${activeStage.target}` : activeStage.objective === "elites" ? `ELIMINATE ${activeStage.target} ELITES` : "BREAK THE APERTURE"}</strong></div>
+                        <div><small>THREAT PROFILE</small><strong>{activeStage.roster.length} SIGNATURES</strong></div>
+                        <div><small>MASTERY TARGETS</small><strong>{activeStage.scoreTargets.map((target) => Math.round(target / 1000) + "K").join(" / ")}</strong></div>
+                      </div>
+                      <p className="difficulty-copy">{DIFFICULTIES[difficulty].description}</p>
+                      <button className="mission-launch" onClick={() => launchGame("campaign", selectedStage, difficulty)}><span><small>{`DEPLOY // ${DIFFICULTIES[difficulty].name}`}</small>START STAGE {activeStage.code}</span><b>→</b></button>
+                    </section>
+                    {leaderboardPanel}
+                  </div>
+                </>
+              )}
+
+              {menuView === "daily" && (
+                <div className="challenge-layout">
+                  <section className="challenge-card">
+                    <p>{`DAILY SIGNATURE // ${currentDailyKey()}`}</p><h3>ONE SEED.<br />ONE GLOBAL BOARD.</h3>
+                    <span>Every prism faces the exact same enemy sequence on Standard difficulty. Your highest signal owns the rank until midnight UTC.</span>
+                    <div className="daily-seed"><small>RIFT SEED</small><strong>{seedFromText(`PRISM-BREAK-DAILY:${currentDailyKey()}`).toString(16).toUpperCase().padStart(8, "0")}</strong></div>
+                    <button className="mission-launch" onClick={() => launchGame("daily", -1, "standard")}><span><small>{"STANDARD // 135 SECONDS"}</small>ENTER DAILY RIFT</span><b>→</b></button>
+                  </section>
+                  {leaderboardPanel}
+                </div>
+              )}
+
+              {menuView === "arcade" && (
+                <>
+                  {difficultySelector}
+                  <div className="challenge-layout">
+                    <section className="challenge-card arcade-card">
+                      <p>{"ARCADE PROTOCOL // OPEN CIRCUIT"}</p><h3>CHASE THE<br />PERFECT RUN.</h3>
+                      <span>The original full-length assault: escalating waves, all enemy signatures, evolving upgrades, and the Aperture at 108 seconds.</span>
+                      <div className="arcade-facts"><div><small>RUN</small><strong>02:30</strong></div><div><small>SCORE MULTIPLIER</small><strong>{DIFFICULTIES[difficulty].scoreMultiplier.toFixed(2)}×</strong></div></div>
+                      <button className="mission-launch" onClick={() => launchGame("arcade", -1, difficulty)}><span><small>{`${DIFFICULTIES[difficulty].name} // GLOBAL RANK`}</small>START ARCADE RIFT</span><b>→</b></button>
+                    </section>
+                    {leaderboardPanel}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {menuView === "home" && <aside className="menu-lore"><span>THE APERTURE</span><strong>LEARNS<br />EVERY MOVE.</strong><p>Now the protocol remembers your victories too.</p></aside>}
+          <footer className="menu-footer"><span>002</span><i /><span>ABSORB · REFRACT · ASCEND</span></footer>
         </section>
       )}
 
@@ -1715,6 +2462,12 @@ export default function PrismBreak() {
             <i><b style={{ width: `${clamp(ui.xp / ui.nextXp * 100, 0, 100)}%` }} /></i>
           </div>
 
+          <div className="objective-tracker">
+            <div><small>{`PRIMARY // ${DIFFICULTIES[ui.difficulty].name}`}</small><strong>{ui.objectiveLabel}</strong></div>
+            <span>{Math.floor(Math.min(ui.objectiveProgress, ui.objectiveTarget))}<b>/ {ui.objectiveTarget}</b></span>
+            <i><b style={{ width: `${clamp(ui.objectiveProgress / Math.max(1, ui.objectiveTarget) * 100, 0, 100)}%` }} /></i>
+          </div>
+
           {ui.bossMaxHealth > 0 && (
             <div className="boss-hud">
               <div><small>OMEGA ENTITY</small><strong>THE APERTURE</strong><span>PHASE {ui.bossHealth / ui.bossMaxHealth > 0.58 ? "I" : ui.bossHealth / ui.bossMaxHealth > 0.28 ? "II" : "III"}</span></div>
@@ -1723,24 +2476,24 @@ export default function PrismBreak() {
           )}
 
           <div className="ability-hud">
-            <div className="ability-label"><span>PRISM NOVA</span><small>{ui.charge >= 100 ? "CORE OVERCHARGED" : "ABSORB FIRE TO CHARGE"}</small></div>
+            <div className="ability-label"><span>PRISM NOVA</span><small>{ui.rapidBuff > 0 ? `RAPID MODULE ${Math.ceil(ui.rapidBuff)}s` : ui.charge >= 100 ? "CORE OVERCHARGED" : "ABSORB FIRE TO CHARGE"}</small></div>
             <i className={ui.charge >= 100 ? "charge-track is-ready" : "charge-track"}><b style={{ width: `${ui.charge}%` }} /></i>
             <strong>{Math.floor(ui.charge)}<small>%</small></strong>
-            <div className="dash-chip"><span style={{ "--dash": `${ui.dash * 360}deg` } as React.CSSProperties}>SPACE</span><small>{ui.dash >= 0.995 ? "DASH READY" : "PHASING"}</small></div>
+            <div className="dash-chip"><span style={{ "--dash": `${ui.dash * 360}deg` } as React.CSSProperties}>{displayKey(bindings.dash)}</span><small>{ui.dash >= 0.995 ? "DASH READY" : "PHASING"}</small></div>
+            <div className="smash-chip"><span className={ui.smash >= 0.995 ? "is-ready" : ""}>{displayKey(bindings.smash)}</span><small>{ui.smash >= 0.995 ? "PRISM SMASH" : `${Math.ceil((1 - ui.smash) * 20)}s COOLDOWN`}</small></div>
           </div>
 
           <button className="pause-trigger" onClick={togglePause} aria-label="Pause game">Ⅱ</button>
 
           {tutorialVisible && (
             <div className="tutorial-strip" role="status">
-              <span><kbd>WASD</kbd> MOVE</span><i />
-              <span><kbd>SPACE</kbd> DASH THROUGH BULLETS</span><i />
-              <span><kbd>E</kbd> NOVA AT 100%</span>
+              <span><kbd>GUIDE</kbd>{ui.guide}</span>
             </div>
           )}
 
           {ui.mode === "playing" && (
             <div className="touch-controls" aria-label="Touch controls">
+              <button className="smash-touch" disabled={ui.smash < 0.995} onPointerDown={(eventValue) => { eventValue.stopPropagation(); inputRef.current.smash = true; }}>SMASH</button>
               <button className="nova-touch" disabled={ui.charge < 100} onPointerDown={(eventValue) => { eventValue.stopPropagation(); inputRef.current.nova = true; }}>NOVA</button>
               <button className="dash-touch" disabled={ui.dash < 0.995} onPointerDown={(eventValue) => { eventValue.stopPropagation(); inputRef.current.dash = true; }}>DASH</button>
             </div>
@@ -1757,7 +2510,26 @@ export default function PrismBreak() {
             <div className="modal-row">
               <button onClick={() => setSound((value) => !value)}>{sound ? "SOUND ON" : "SOUND OFF"}</button>
               <button onClick={() => setHighContrast((value) => !value)}>{highContrast ? "HIGH CONTRAST" : "STANDARD CONTRAST"}</button>
+              <button onClick={() => setControlsOpen((value) => !value)}>{controlsOpen ? "HIDE KEYS" : "CHANGE KEYS"}</button>
             </div>
+            {controlsOpen && (
+              <div className="controls-panel" aria-label="Keyboard controls">
+                <p>{capturingBinding ? `PRESS A KEY FOR ${capturingBinding.toUpperCase()}` : "CLICK A CONTROL, THEN PRESS A KEY"}</p>
+                <div>
+                  {(Object.keys(bindings) as BindingAction[]).map((action) => (
+                    <button key={action} className={capturingBinding === action ? "is-capturing" : ""} onClick={() => startBindingCapture(action)}>
+                      <span>{action.toUpperCase()}</span><b>{capturingBinding === action ? "PRESS KEY" : displayKey(bindings[action])}</b>
+                    </button>
+                  ))}
+                </div>
+                <button className="controls-reset" onClick={() => {
+                  bindingsRef.current = DEFAULT_BINDINGS;
+                  inputRef.current.bindings = DEFAULT_BINDINGS;
+                  setBindings(DEFAULT_BINDINGS);
+                  try { localStorage.setItem("prism-break-bindings-v1", JSON.stringify(DEFAULT_BINDINGS)); } catch { /* optional */ }
+                }}>RESTORE DEFAULT KEYS</button>
+              </div>
+            )}
             <button className="modal-link" onClick={returnToMenu}>ABORT RUN</button>
           </div>
         </section>
@@ -1766,14 +2538,14 @@ export default function PrismBreak() {
       {ui.mode === "upgrade" && (
         <section className="modal-layer upgrade-modal" role="dialog" aria-modal="true" aria-labelledby="upgrade-title">
           <div className="upgrade-heading">
-            <p className="modal-kicker">PRISM EVOLUTION // LEVEL {String(ui.level).padStart(2, "0")}</p>
+            <p className="modal-kicker">{`PRISM EVOLUTION // LEVEL ${String(ui.level).padStart(2, "0")}`}</p>
             <h2 id="upgrade-title">CHOOSE A REFRACTION</h2>
             <span>Time is suspended while the prism adapts.</span>
           </div>
           <div className="upgrade-grid">
             {ui.choices.map((id, index) => {
               const info = UPGRADES[id];
-              const nextLevel = (gameRef.current.upgrades[id] ?? 0) + 1;
+              const nextLevel = (ui.upgrades[id] ?? 0) + 1;
               return (
                 <button key={id} className="upgrade-card" onClick={() => pickUpgrade(id)}>
                   <span className="card-index">0{index + 1}</span>
@@ -1793,17 +2565,22 @@ export default function PrismBreak() {
         <section className={`modal-layer result-modal ${ui.mode === "victory" ? "victory-modal" : ""}`} role="dialog" aria-modal="true" aria-labelledby="result-title">
           <div className="result-panel">
             <p className="modal-kicker">{ui.mode === "victory" ? "PROTOCOL COMPLETE" : "SIGNAL TERMINATED"}</p>
-            <h2 id="result-title">{ui.mode === "victory" ? "APERTURE\nBROKEN" : "PRISM\nFALLEN"}</h2>
+            <h2 id="result-title">{ui.mode === "victory" ? ui.runMode === "campaign" && ui.stageId < 5 ? "STAGE\nCLEARED" : "APERTURE\nBROKEN" : "PRISM\nFALLEN"}</h2>
             <p className="result-reason">{ui.reason}</p>
+            {ui.mode === "victory" && ui.runMode === "campaign" && <div className="result-grade"><span>MISSION MASTERY</span><strong>{"◆".repeat(resultStars)}{"◇".repeat(3 - resultStars)}</strong></div>}
             <div className="final-score"><small>FINAL SCORE</small><strong>{formatScore(ui.score)}</strong>{ui.score >= bestScore && ui.score > 0 && <span>NEW BEST</span>}</div>
             <div className="result-stats">
               <div><strong>{ui.kills}</strong><span>HOSTILES</span></div>
               <div><strong>{ui.absorbed}</strong><span>ABSORBED</span></div>
               <div><strong>×{ui.bestCombo.toFixed(2)}</strong><span>BEST COMBO</span></div>
             </div>
+            <div className="rank-readout"><span>PERSONAL BEST RANK</span><strong>{runRank ? `RANK ${String(runRank).padStart(2, "0")}` : leaderboardError ? "UPLINK PENDING" : "SYNCING…"}</strong></div>
             <div className="result-actions">
-              <button className="modal-primary" onClick={startGame}>RUN IT AGAIN</button>
-              <button className="modal-link" onClick={returnToMenu}>RETURN TO TITLE</button>
+              {ui.mode === "victory" && ui.runMode === "campaign" && ui.stageId < CAMPAIGN_STAGES.length - 1 && (
+                <button className="modal-primary" onClick={() => launchGame("campaign", ui.stageId + 1, ui.difficulty)}>NEXT STAGE</button>
+              )}
+              <button className={ui.mode === "victory" && ui.runMode === "campaign" && ui.stageId < CAMPAIGN_STAGES.length - 1 ? "modal-secondary" : "modal-primary"} onClick={replayGame}>RUN IT AGAIN</button>
+              <button className="modal-link" onClick={returnToMenu}>RETURN TO MODE SELECT</button>
             </div>
           </div>
         </section>

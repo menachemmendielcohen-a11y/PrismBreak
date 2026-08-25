@@ -1,8 +1,7 @@
 # vinext-starter
 
-A clean full-stack starter running on
-[vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
-Drizzle support.
+A browser game running on [vinext](https://github.com/cloudflare/vinext), with
+a Cloudflare D1 leaderboard managed through Drizzle migrations.
 
 ## Prerequisites
 
@@ -21,11 +20,11 @@ This starter does not use `wrangler.jsonc`.
 ## Included Shape
 
 - edit site code under `app/`
-- `.openai/hosting.json` declares optional Sites D1 and R2 bindings
+- `.openai/hosting.json` declares the Sites D1 binding
 - `vite.config.ts` simulates declared bindings for local development
-- `db/schema.ts` starts intentionally empty
-- `examples/d1/` contains an optional D1 example surface
-- `drizzle.config.ts` supports local migration generation when needed
+- `db/schema.ts` defines the durable leaderboard
+- `app/api/scores/route.ts` reads filtered boards and accepts authenticated scores
+- `drizzle.config.ts` generates the D1 migrations
 
 ## Workspace Auth Headers
 
