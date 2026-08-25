@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#020309" />
+    <title>PRISM BREAK — Absorb the Storm</title>
+    <script type="module" crossorigin src="./assets/index-p3R6v_B5.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-CLSyh8xB.css">
+  </head>
+  <body>
+    <div id="root"></div>
+    <script>
+      (() => {
+        const hostname = window.location.hostname;
+        const parts = hostname.split(".");
+        const crazyGamesIndex = parts.indexOf("crazygames");
+        const isCrazyGames = crazyGamesIndex !== -1 && crazyGamesIndex >= parts.length - 3;
+
+        window.__PRISM_CRAZYGAMES__ = isCrazyGames;
+
+        if (!isCrazyGames) {
+          document.getElementById("root").style.display = "none";
+          const message = document.createElement("p");
+          message.textContent = "Available only on CrazyGames";
+          message.style.cssText = "position:fixed;inset:0;display:grid;place-items:center;margin:0;background:#020309;color:#fff;font:16px sans-serif";
+          document.body.appendChild(message);
+          return;
+        }
+
+        window.addEventListener("wheel", (event) => event.preventDefault(), { passive: false });
+        window.addEventListener("keydown", (event) => {
+          if (["ArrowUp", "ArrowDown", " "].includes(event.key)) event.preventDefault();
+        });
+        document.addEventListener("visibilitychange", () => {
+          const application = window.application;
+          if (application && typeof application.publishEvent === "function") {
+            application.publishEvent("OnWebDocumentPause", document.visibilityState === "hidden" ? "True" : "False");
+          }
+        });
+        document.addEventListener("contextmenu", (event) => event.preventDefault());
+      })();
+    </script>
+  </body>
+</html>

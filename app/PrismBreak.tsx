@@ -9,6 +9,9 @@ const BOSS_TIME = 108;
 const RUN_TIME = 150;
 const TAU = Math.PI * 2;
 
+const isCrazyGamesBuild = () => typeof window !== "undefined"
+  && (window as typeof window & { __PRISM_CRAZYGAMES__?: boolean }).__PRISM_CRAZYGAMES__ === true;
+
 type Mode = "menu" | "playing" | "paused" | "upgrade" | "gameover" | "victory";
 type EnemyKind = "needle" | "halo" | "splitter" | "lancer" | "bulwark" | "boss";
 type Sfx = "shoot" | "hit" | "kill" | "dash" | "absorb" | "nova" | "hurt" | "level" | "boss" | "pickup";
@@ -1837,6 +1840,59 @@ function displayKey(code: string) {
   return code.replace("Digit", "");
 }
 
+const KEYBOARD_CONTROL_SELECTOR = [
+  "input",
+  "textarea",
+  "select",
+  "button",
+  "a[href]",
+  "summary",
+  "[contenteditable]:not([contenteditable='false'])",
+  "[role='button']",
+  "[role='link']",
+  "[role='checkbox']",
+  "[role='radio']",
+  "[role='switch']",
+  "[role='slider']",
+  "[role='spinbutton']",
+  "[role='combobox']",
+  "[role='listbox']",
+  "[role='menuitem']",
+  "[role='option']",
+  "[role='tab']",
+].join(",");
+
+function eventTargetElement(target: EventTarget | null) {
+  if (target instanceof Element) return target;
+  return target instanceof Node ? target.parentElement : null;
+}
+
+function isKeyboardControlTarget(target: EventTarget | null) {
+  return eventTargetElement(target)?.closest(KEYBOARD_CONTROL_SELECTOR) != null;
+}
+
+function isEditableTarget(target: EventTarget | null) {
+  return eventTargetElement(target)?.closest(
+    "input, textarea, select, [contenteditable]:not([contenteditable='false'])",
+  ) != null;
+}
+
+function canConsumeWheel(target: EventTarget | null, shell: HTMLElement, deltaX: number, deltaY: number) {
+  let element = eventTargetElement(target) as HTMLElement | null;
+  while (element && shell.contains(element)) {
+    const style = window.getComputedStyle(element);
+    const scrollsY = /(auto|scroll)/.test(style.overflowY) && element.scrollHeight > element.clientHeight;
+    const scrollsX = /(auto|scroll)/.test(style.overflowX) && element.scrollWidth > element.clientWidth;
+    if (scrollsY && ((deltaY < 0 && element.scrollTop > 0)
+      || (deltaY > 0 && element.scrollTop + element.clientHeight < element.scrollHeight - 1))) return true;
+    if (scrollsX && ((deltaX < 0 && element.scrollLeft > 0)
+      || (deltaX > 0 && element.scrollLeft + element.clientWidth < element.scrollWidth - 1))) return true;
+    if (element === shell) break;
+    element = element.parentElement;
+  }
+  return false;
+}
+
 export default function PrismBreak() {
   const shellRef = useRef<HTMLElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -1930,6 +1986,12 @@ export default function PrismBreak() {
   }, [sound, reducedMotion, highContrast]);
 
   const loadLeaderboard = useCallback(async (config: RunConfig) => {
+    if (isCrazyGamesBuild()) {
+      setLeaderboard([]);
+      setLeaderboardError("GLOBAL LEADERBOARD UNAVAILABLE — LOCAL RECORDS STILL SAVE");
+      setLeaderboardLoading(false);
+      return;
+    }
     setLeaderboardLoading(true);
     setLeaderboardError("");
     try {
@@ -1992,6 +2054,10 @@ export default function PrismBreak() {
 
     if (scoreSubmittedRef.current) return;
     scoreSubmittedRef.current = true;
+    if (isCrazyGamesBuild()) {
+      setLeaderboardError("SCORE SAVED LOCALLY — GLOBAL UPLINK UNAVAILABLE");
+      return;
+    }
     const submittedRunId = game.runId;
     void (async () => {
       try {
@@ -2071,8 +2137,10 @@ export default function PrismBreak() {
         setCapturingBinding(null);
         return;
       }
+      if (isKeyboardControlTarget(eventValue.target)) return;
       input.keys[eventValue.code] = true;
       const game = gameRef.current;
+      if (["ArrowUp", "ArrowDown", " "].includes(eventValue.key)) eventValue.preventDefault();
       if (Object.values(input.bindings).includes(eventValue.code) && game.mode !== "menu") eventValue.preventDefault();
       if (!eventValue.repeat && eventValue.code === input.bindings.dash) input.dash = true;
       if (!eventValue.repeat && eventValue.code === input.bindings.nova) input.nova = true;
@@ -2141,7 +2209,15 @@ export default function PrismBreak() {
       if (input.stickId === pointer.pointerId) { input.stickId = null; input.stickX = 0; input.stickY = 0; }
       if (input.aimId === pointer.pointerId) input.aimId = null;
     };
-    const onContextMenu = (eventValue: MouseEvent) => eventValue.preventDefault();
+    const onWheel = (eventValue: WheelEvent) => {
+      if (!canConsumeWheel(eventValue.target, shell, eventValue.deltaX, eventValue.deltaY)) {
+        eventValue.preventDefault();
+      }
+    };
+    const onContextMenu = (eventValue: MouseEvent) => {
+      if (!isEditableTarget(eventValue.target)) eventValue.preventDefault();
+    };
+    const nonPassiveListener: AddEventListenerOptions = { passive: false };
 
     const observer = new ResizeObserver(resize);
     observer.observe(shell);
@@ -2153,7 +2229,8 @@ export default function PrismBreak() {
     canvas.addEventListener("pointermove", onPointerMove, { passive: false });
     canvas.addEventListener("pointerup", onPointerUp);
     canvas.addEventListener("pointercancel", onPointerUp);
-    canvas.addEventListener("contextmenu", onContextMenu);
+    shell.addEventListener("wheel", onWheel, nonPassiveListener);
+    shell.addEventListener("contextmenu", onContextMenu);
     resize();
     publish();
 
@@ -2211,7 +2288,8 @@ export default function PrismBreak() {
       canvas.removeEventListener("pointermove", onPointerMove);
       canvas.removeEventListener("pointerup", onPointerUp);
       canvas.removeEventListener("pointercancel", onPointerUp);
-      canvas.removeEventListener("contextmenu", onContextMenu);
+      shell.removeEventListener("wheel", onWheel, nonPassiveListener);
+      shell.removeEventListener("contextmenu", onContextMenu);
       audioRef.current?.close();
       audioRef.current = null;
     };
