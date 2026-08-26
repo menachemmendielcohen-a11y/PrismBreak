@@ -39,8 +39,9 @@ test("server-renders the PRISM BREAK campaign shell", async () => {
 });
 
 test("keeps progression and the D1 leaderboard wired into the production app", async () => {
-  const [game, hosting, schema, scoresRoute, migration] = await Promise.all([
+  const [game, styles, hosting, schema, scoresRoute, migration] = await Promise.all([
     readFile(new URL("../app/PrismBreak.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../.openai/hosting.json", import.meta.url), "utf8"),
     readFile(new URL("../db/schema.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/scores/route.ts", import.meta.url), "utf8"),
@@ -51,11 +52,17 @@ test("keeps progression and the D1 leaderboard wired into the production app", a
   assert.match(game, /type RunMode = "campaign" \| "daily" \| "arcade"/);
   assert.match(game, /type Difficulty = "cadet" \| "standard" \| "overdrive"/);
   assert.match(game, /prism-break-profile-v2/);
-  assert.match(game, /type DropKind = "repair" \| "overcharge" \| "rapid" \| "smashcell"/);
+  assert.match(game, /type DropKind = "repair" \| "overcharge" \| "rapid" \| "smashcell" \| "double" \| "alliance"/);
+  assert.match(game, /function updateAlly/);
+  assert.match(game, /game\.doubleShotBuff = Math\.max\(game\.doubleShotBuff, 14\)/);
+  assert.match(game, /const pointerControlled = !input\.usingTouch && input\.hasPointer/);
   assert.match(game, /const DEFAULT_BINDINGS/);
   assert.match(game, /function triggerSmash/);
   assert.match(game, /prism-break-bindings-v1/);
+  assert.match(game, /className="active-effects-panel"/);
+  assert.match(game, /className="power-shortcuts"/);
   assert.match(game, /fetch\("\/api\/scores"/);
+  assert.match(styles, /\.prism-game\.is-playing \* \{ cursor: none !important; \}/);
 
   assert.equal(JSON.parse(hosting).d1, "DB");
   assert.match(schema, /sqliteTable\(\s*"scores"/);

@@ -9,10 +9,13 @@
     "dev": "vinext dev",
     "build": "vinext build",
     "build:crazygames": "vite build --config vite.crazygames.config.ts",
+    "build:firebase": "vite build --config vite.firebase.config.ts",
+    "preview:firebase": "vite preview --config vite.firebase.config.ts",
     "test:crazygames": "node --test tests/crazygames.test.mjs",
+    "test:firebase": "npm run build:firebase && node --test tests/firebase.test.mjs",
     "start": "vinext start",
     "test": "npm run build && node --test tests/rendered-html.test.mjs",
-    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
+    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next --ignore-pattern crazygames-dist --ignore-pattern firebase-dist --ignore-pattern PRISM-BREAK-CrazyGames --ignore-pattern PRISM-BREAK-CrazyGames-Ready",
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {

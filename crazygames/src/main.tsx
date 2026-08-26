@@ -4,11 +4,19 @@ import "../../app/globals.css";
 import PrismBreak from "../../app/PrismBreak";
 import { isCrazyGamesLaunchAllowed } from "./sitelock.js";
 
+declare global {
+  interface Window {
+    __PRISM_STATIC_BUILD__?: boolean;
+  }
+}
+
+window.__PRISM_STATIC_BUILD__ = true;
+
 const rootElement = document.getElementById("root");
 if (!rootElement) throw new Error("Missing game root element");
 
 const root = createRoot(rootElement);
-const launchAllowed = isCrazyGamesLaunchAllowed(window.location.hostname, import.meta.env.PROD);
+const launchAllowed = isCrazyGamesLaunchAllowed();
 
 if (!launchAllowed) {
   root.render(
