@@ -49,7 +49,7 @@ test("keeps progression and the D1 leaderboard wired into the production app", a
   ]);
 
   assert.equal((game.match(/id:\s*[0-5],\s*code:/g) ?? []).length, 6);
-  assert.match(game, /type RunMode = "campaign" \| "daily" \| "arcade"/);
+  assert.match(game, /type RunMode = "campaign" \| "prime" \| "threat" \| "daily" \| "arcade"/);
   assert.match(game, /type Difficulty = "cadet" \| "standard" \| "overdrive"/);
   assert.match(game, /prism-break-profile-v2/);
   assert.match(game, /type DropKind = "repair" \| "overcharge" \| "rapid" \| "smashcell" \| "double" \| "alliance"/);
@@ -62,7 +62,7 @@ test("keeps progression and the D1 leaderboard wired into the production app", a
   assert.match(game, /className="active-effects-panel"/);
   assert.match(game, /className="power-shortcuts"/);
   assert.match(game, /fetch\("\/api\/scores"/);
-  assert.match(styles, /\.prism-game\.is-playing \* \{ cursor: none !important; \}/);
+  assert.match(styles, /\.prism-game\.is-playing \*[\s\S]*?cursor:\s*none !important;/);
 
   assert.equal(JSON.parse(hosting).d1, "DB");
   assert.match(schema, /sqliteTable\(\s*"scores"/);
