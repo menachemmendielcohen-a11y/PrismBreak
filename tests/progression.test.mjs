@@ -42,6 +42,25 @@ test("locked Prime missions cannot be purchased and currency never goes negative
   assert.deepEqual(purchasePrime(mission.unlockCost - 1, mission.requiredRank, mission, []), { shards: mission.unlockCost - 1, unlockedIds: [] });
 });
 
+test("paid Prime missions are approachable bonus stages rather than hidden Threat levels", () => {
+  for (const mission of PRIME_MISSIONS) {
+    assert.equal(mission.difficulty, "cadet");
+    assert.deepEqual(mission.modifiers, []);
+    assert.ok(mission.bonuses.includes("drop_surge"));
+    assert.ok(mission.bonuses.length >= 3);
+    assert.ok(mission.scaling.enemyHealth <= 0.9);
+    assert.ok(mission.scaling.enemySpeed <= 0.9);
+    assert.ok(mission.scaling.projectileSpeed <= 0.9);
+    assert.ok(mission.scaling.dashCooldown <= 0.82);
+    assert.equal(mission.scaling.integrityPenalty, 0);
+    assert.equal(mission.scaling.novaDrain, 0);
+    assert.ok(mission.maxActiveElites <= 1);
+    assert.ok(mission.reward[0] >= 14 && mission.reward[1] > mission.reward[0]);
+  }
+  assert.ok(PRIME_MISSIONS.find((mission) => mission.objective === "kills").target <= 40);
+  assert.ok(PRIME_MISSIONS.find((mission) => mission.objective === "absorb").target <= 24);
+});
+
 test("Threat scaling stays gradual and finite from 1 through 1000+", () => {
   const levels = [1, 5, 10, 20, 40, 60, 100, 200, 500, 1000, 5000];
   const rows = levels.map((level) => threatScaling(level));

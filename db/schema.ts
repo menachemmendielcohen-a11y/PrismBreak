@@ -63,7 +63,7 @@ export const scores = sqliteTable(
     ),
     check(
       "scores_scope_check",
-      sql`(${table.mode} = 'campaign' AND ${table.stage} BETWEEN 0 AND 5 AND ${table.dailyKey} = '') OR (${table.mode} = 'daily' AND ${table.stage} = -1 AND ${table.difficulty} = 'standard' AND length(${table.dailyKey}) = 10) OR (${table.mode} = 'arcade' AND ${table.stage} = -1 AND ${table.dailyKey} = '')`,
+      sql`(${table.mode} = 'campaign' AND ${table.stage} BETWEEN 0 AND 100 AND ${table.dailyKey} = '') OR (${table.mode} = 'daily' AND ${table.stage} = -1 AND ${table.difficulty} = 'standard' AND length(${table.dailyKey}) = 10) OR (${table.mode} = 'arcade' AND ${table.stage} = -1 AND ${table.dailyKey} = '')`,
     ),
   ],
 );

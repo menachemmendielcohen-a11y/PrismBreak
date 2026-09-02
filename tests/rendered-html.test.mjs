@@ -49,10 +49,24 @@ test("keeps progression and the D1 leaderboard wired into the production app", a
   ]);
 
   assert.equal((game.match(/id:\s*[0-5],\s*code:/g) ?? []).length, 6);
+  assert.match(game, /Array\.from\(\{ length: 101 \}/);
+  assert.match(game, /\{ id: 2, start: 11, end: 25/);
+  assert.match(game, /\{ id: 3, start: 26, end: 50/);
+  assert.match(game, /\{ id: 4, start: 51, end: 100/);
+  assert.match(game, /const WORLD_ROSTERS/);
+  assert.match(game, /const WORLD_BACKDROPS/);
+  assert.match(game, /const WORLD_CORE_UPGRADES/);
+  assert.match(game, /"siphon"/);
+  assert.match(game, /"oracle"/);
+  assert.match(game, /worldCoreUpgrades/);
   assert.match(game, /type RunMode = "campaign" \| "prime" \| "threat" \| "daily" \| "arcade"/);
   assert.match(game, /type Difficulty = "cadet" \| "standard" \| "overdrive"/);
   assert.match(game, /prism-break-profile-v2/);
-  assert.match(game, /type DropKind = "repair" \| "overcharge" \| "rapid" \| "smashcell" \| "double" \| "alliance"/);
+  assert.match(game, /type DropKind =[\s\S]*?"aegis" \| "pierce" \| "stasis" \| "resonance"/);
+  assert.match(game, /type EnemyKind =[\s\S]*?"skimmer" \| "weaver" \| "warden" \| "siphon" \| "phantom" \| "oracle"/);
+  assert.match(game, /maxActiveElites: 2, eliteTierCap: "minor"/);
+  assert.match(game, /objectiveEliteDue/);
+  assert.match(game, /ACHIEVEMENT_DEFINITIONS/);
   assert.match(game, /function updateAlly/);
   assert.match(game, /game\.doubleShotBuff = Math\.max\(game\.doubleShotBuff, 14\)/);
   assert.match(game, /const pointerControlled = !input\.usingTouch && input\.hasPointer/);
@@ -63,11 +77,13 @@ test("keeps progression and the D1 leaderboard wired into the production app", a
   assert.match(game, /className="power-shortcuts"/);
   assert.match(game, /fetch\("\/api\/scores"/);
   assert.match(styles, /\.prism-game\.is-playing \*[\s\S]*?cursor:\s*none !important;/);
+  assert.match(styles, /\.achievement-grid/);
 
   assert.equal(JSON.parse(hosting).d1, "DB");
   assert.match(schema, /sqliteTable\(\s*"scores"/);
   assert.match(schema, /scores_leaderboard_idx/);
   assert.match(scoresRoute, /\.prepare\(/);
+  assert.match(scoresRoute, /MAX_CAMPAIGN_STAGE = 100/);
   assert.match(scoresRoute, /PILOT-/);
   assert.match(migration, /CREATE TABLE `scores`/);
   assert.match(migration, /PRAGMA optimize;/);

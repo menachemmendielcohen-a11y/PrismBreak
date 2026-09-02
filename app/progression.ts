@@ -11,6 +11,13 @@ export type ThreatModifierId =
   | "low_integrity"
   | "rapid_spawn";
 
+export type PrimeBonusId =
+  | "twin_array"
+  | "rapid_array"
+  | "drop_surge"
+  | "resonance_field"
+  | "aegis_start";
+
 export interface ThreatScaling {
   enemyHealth: number;
   enemySpeed: number;
@@ -28,13 +35,21 @@ export interface PrimeMissionDefinition {
   id: string;
   code: string;
   name: string;
+  hebrewName: string;
+  description: string;
+  hebrewDescription: string;
   requiredRank: number;
   unlockCost: number;
   duration: number;
   objective: "survive" | "kills" | "absorb";
   target: number;
   reward: [number, number];
+  difficulty: "cadet" | "standard";
+  maxHostiles: number;
+  maxActiveElites: number;
+  bonuses: PrimeBonusId[];
   modifiers: ThreatModifierId[];
+  scaling: ThreatScaling;
 }
 
 export interface RewardMetrics {
@@ -82,9 +97,33 @@ export const PROGRESSION_BALANCE = {
 } as const;
 
 export const PRIME_MISSIONS: PrimeMissionDefinition[] = [
-  { id: "prime-1", code: "PRIME // I", name: "VELOCITY LOCK", requiredRank: 4, unlockCost: 60, duration: 85, objective: "survive", target: 85, reward: [12, 22], modifiers: ["fast_projectiles", "elite_swarm"] },
-  { id: "prime-2", code: "PRIME // II", name: "EXTERMINATION GRID", requiredRank: 8, unlockCost: 120, duration: 100, objective: "kills", target: 110, reward: [22, 38], modifiers: ["rapid_spawn", "dash_cooldown", "aggressive_enemies"] },
-  { id: "prime-3", code: "PRIME // III", name: "ABSORPTION PARADOX", requiredRank: 15, unlockCost: 220, duration: 110, objective: "absorb", target: 90, reward: [35, 58], modifiers: ["nova_drain", "high_density", "fast_projectiles"] },
+  {
+    id: "prime-1", code: "PRIME // I", name: "PRISM PARADE", hebrewName: "מצעד הפריזמה",
+    description: "A short survival celebration with Twin Beam, a double shield and frequent power drops.",
+    hebrewDescription: "חגיגת הישרדות קצרה עם ירי כפול, מגן כפול ודרופים תכופים.",
+    requiredRank: 4, unlockCost: 60, duration: 55, objective: "survive", target: 55, reward: [14, 24],
+    difficulty: "cadet", maxHostiles: 16, maxActiveElites: 1,
+    bonuses: ["twin_array", "aegis_start", "drop_surge"], modifiers: [],
+    scaling: { enemyHealth: 0.82, enemySpeed: 0.9, projectileSpeed: 0.9, spawnRate: 0.92, maxEnemies: 16, eliteChance: 0.015, attackRate: 0.88, dashCooldown: 0.82, integrityPenalty: 0, novaDrain: 0 },
+  },
+  {
+    id: "prime-2", code: "PRIME // II", name: "CASCADE RANGE", hebrewName: "מטווח המפל",
+    description: "A fast power fantasy: fragile targets pour into the arena while Twin Beam and Rapid Fire stay online.",
+    hebrewDescription: "שלב עוצמה מהיר: מטרות חלשות נכנסות לזירה בזמן שירי כפול וירי מהיר נשארים פעילים.",
+    requiredRank: 8, unlockCost: 120, duration: 65, objective: "kills", target: 40, reward: [22, 36],
+    difficulty: "cadet", maxHostiles: 22, maxActiveElites: 1,
+    bonuses: ["twin_array", "rapid_array", "drop_surge"], modifiers: [],
+    scaling: { enemyHealth: 0.72, enemySpeed: 0.9, projectileSpeed: 0.84, spawnRate: 1.25, maxEnemies: 22, eliteChance: 0.025, attackRate: 0.92, dashCooldown: 0.82, integrityPenalty: 0, novaDrain: 0 },
+  },
+  {
+    id: "prime-3", code: "PRIME // III", name: "CHROMA HARVEST", hebrewName: "קציר כרומה",
+    description: "A generous absorption playground with slow spectrum fire, boosted resonance and a double shield.",
+    hebrewDescription: "מגרש ספיגה נדיב עם ירי ספקטרום איטי, תהודה מוגברת ומגן כפול.",
+    requiredRank: 15, unlockCost: 220, duration: 70, objective: "absorb", target: 24, reward: [32, 50],
+    difficulty: "cadet", maxHostiles: 18, maxActiveElites: 1,
+    bonuses: ["resonance_field", "aegis_start", "drop_surge"], modifiers: [],
+    scaling: { enemyHealth: 0.88, enemySpeed: 0.82, projectileSpeed: 0.72, spawnRate: 0.98, maxEnemies: 18, eliteChance: 0.015, attackRate: 1.05, dashCooldown: 0.8, integrityPenalty: 0, novaDrain: 0 },
+  },
 ];
 
 export function migrateProgressionSave(raw: unknown): ProgressionSave {
@@ -143,7 +182,7 @@ function clamp(value: number, min: number, max: number) {
 }
 
 export function calculatePlayerRank(totalStars: number, highestThreat: number, primeClears: number, rankXp = 0) {
-  return Math.max(1, 1 + Math.floor(Math.max(0, totalStars) / 2) + Math.floor(Math.sqrt(Math.max(0, highestThreat)) / 2) + Math.max(0, primeClears) * 2 + Math.floor(Math.max(0, rankXp) / 5));
+  return Math.max(1, 1 + Math.floor(Math.max(0, totalStars) / 12) + Math.floor(Math.sqrt(Math.max(0, highestThreat)) / 2) + Math.max(0, primeClears) * 2 + Math.floor(Math.max(0, rankXp) / 12));
 }
 
 export function maxThreatAttempt(highestCompleted: number) {

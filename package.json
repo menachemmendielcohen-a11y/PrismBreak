@@ -13,7 +13,7 @@
     "preview:firebase": "vite preview --config vite.firebase.config.ts",
     "test:crazygames": "node --test tests/crazygames.test.mjs",
     "test:firebase": "npm run build:firebase && node --test tests/firebase.test.mjs",
-    "test:progression": "node --test tests/progression.test.mjs",
+    "test:progression": "node --test tests/progression.test.mjs tests/achievements.test.mjs tests/spectrum.test.mjs tests/migration.test.mjs",
     "start": "vinext start",
     "test": "npm run build && node --test tests/rendered-html.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next --ignore-pattern crazygames-dist --ignore-pattern firebase-dist --ignore-pattern PRISM-BREAK-CrazyGames --ignore-pattern PRISM-BREAK-CrazyGames-Ready",

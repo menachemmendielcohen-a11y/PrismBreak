@@ -8,6 +8,13 @@
       "when": 1787687510062,
       "tag": "0000_sour_blindfold",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1787900000000,
+      "tag": "0001_expand_campaign_scope",
+      "breakpoints": true
     }
   ]
 }

@@ -33,6 +33,11 @@ interface D1Database {
   dump(): Promise<ArrayBuffer>;
 }
 
+declare module "*.png" {
+  const src: string;
+  export default src;
+}
+
 declare module "cloudflare:workers" {
   export const env: {
     DB?: D1Database;

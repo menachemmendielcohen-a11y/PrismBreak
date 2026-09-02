@@ -7,6 +7,7 @@ const MODES = ["campaign", "daily", "arcade"] as const;
 const DIFFICULTIES = ["cadet", "standard", "overdrive"] as const;
 const MAX_BODY_BYTES = 8_192;
 const MAX_SCORES_PER_PAGE = 50;
+const MAX_CAMPAIGN_STAGE = 100;
 
 type ScoreMode = (typeof MODES)[number];
 type Difficulty = (typeof DIFFICULTIES)[number];
@@ -77,7 +78,7 @@ export async function GET(request: Request) {
         )
         .bind(dailyKey, limit);
     } else if (mode === "campaign") {
-      const stage = readQueryInteger(params.get("stage"), 0, 0, 5);
+      const stage = readQueryInteger(params.get("stage"), 0, 0, MAX_CAMPAIGN_STAGE);
       const difficulty = readDifficulty(params.get("difficulty") ?? "cadet");
       if (stage === null || !difficulty) {
         return errorResponse("Invalid campaign filters.", 400);
@@ -283,7 +284,7 @@ function parseScoreSubmission(
   let dailyKey = "";
 
   if (mode === "campaign") {
-    const campaignStage = readInteger(value.stage, 0, 5);
+    const campaignStage = readInteger(value.stage, 0, MAX_CAMPAIGN_STAGE);
     const campaignDifficulty = readDifficulty(value.difficulty);
     if (campaignStage === null || !campaignDifficulty) {
       return { ok: false, error: "Campaign scores require a valid stage and difficulty." };
