@@ -137,6 +137,7 @@ button:focus-visible {
   z-index: 5;
   inset: 0;
   pointer-events: none;
+  overflow: hidden;
 }
 
 .menu-nav {
@@ -145,11 +146,14 @@ button:focus-visible {
   left: 0;
   right: 0;
   height: 82px;
+  max-width: 100vw;
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   gap: 18px;
   padding: 0 clamp(24px, 4vw, 70px);
   border-bottom: 1px solid rgba(194, 230, 255, .09);
+  overflow: hidden;
   pointer-events: auto;
 }
 
@@ -170,7 +174,11 @@ button:focus-visible {
 }
 
 .menu-nav p {
+  min-width: 0;
   margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: rgba(225, 242, 251, .46);
   font: 600 9px/1 var(--font-geist-mono), monospace;
   letter-spacing: .2em;
@@ -186,9 +194,12 @@ button:focus-visible {
   display: flex;
   align-items: center;
   gap: 7px;
+  min-width: 0;
+  justify-content: flex-end;
 }
 
 .menu-tools button {
+  flex: 0 1 auto;
   min-height: 34px;
   padding: 0 12px;
   display: inline-flex;
@@ -200,6 +211,7 @@ button:focus-visible {
   cursor: pointer;
   font: 600 8px/1 var(--font-geist-mono), monospace;
   letter-spacing: .13em;
+  white-space: nowrap;
   transition: color .2s ease, border-color .2s ease, background .2s ease;
 }
 
@@ -223,6 +235,7 @@ button:focus-visible {
   left: clamp(28px, 8vw, 138px);
   top: 50%;
   width: min(660px, calc(100vw - 56px));
+  box-sizing: border-box;
   transform: translateY(-48%);
   pointer-events: auto;
   animation: menuReveal .9s cubic-bezier(.16, 1, .3, 1) both;
@@ -239,12 +252,17 @@ button:focus-visible {
 .menu-kicker {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 13px;
   margin: 0 0 25px;
   color: var(--cyan);
   text-shadow: 0 0 16px rgba(103, 240, 255, .48);
   font: 650 9px/1 var(--font-geist-mono), monospace;
   letter-spacing: .3em;
+}
+
+.menu-kicker span {
+  min-width: 0;
 }
 
 .menu-kicker i {
@@ -262,6 +280,7 @@ button:focus-visible {
   display: flex;
   flex-direction: column;
   width: max-content;
+  max-width: 100%;
   font-size: clamp(76px, 10.6vw, 166px);
   font-weight: 850;
   line-height: .7;
@@ -293,11 +312,14 @@ button:focus-visible {
 .menu-actions {
   display: flex;
   align-items: stretch;
+  flex-wrap: wrap;
   gap: 20px;
+  max-width: 100%;
 }
 
 .launch-button {
-  width: 260px;
+  width: min(390px, 100%);
+  flex: 1 1 260px;
   height: 62px;
   display: flex;
   align-items: center;
@@ -339,6 +361,7 @@ button:focus-visible {
 
 .best-score {
   min-width: 150px;
+  flex: 0 1 190px;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -474,6 +497,8 @@ button:focus-visible {
 
 .mode-card-grid {
   width: min(690px, 100%);
+  max-width: 100%;
+  box-sizing: border-box;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
@@ -481,6 +506,8 @@ button:focus-visible {
 }
 
 .mode-card-grid button {
+  min-width: 0;
+  box-sizing: border-box;
   min-height: 82px;
   position: relative;
   display: flex;
@@ -539,6 +566,7 @@ button:focus-visible {
 
 .mode-card-grid span {
   max-width: 100%;
+  overflow-wrap: anywhere;
   color: rgba(220, 239, 248, .3);
   font: 560 6px/1.35 var(--font-geist-mono), monospace;
   letter-spacing: .07em;
@@ -2881,6 +2909,7 @@ button:focus-visible {
 @media (min-width: 1101px) {
   .home-content {
     left: 50%;
+    right: auto;
     top: 86px;
     width: min(1120px, calc(100vw - 96px));
     max-height: calc(100dvh - 132px);
@@ -2901,22 +2930,198 @@ button:focus-visible {
   }
   .home-content .mode-card-grid {
     width: 100%;
-    grid-template-columns: repeat(8, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 8px;
     margin-top: 15px;
   }
   .home-content .mode-card-grid > button {
-    grid-column: span 2;
+    grid-column: auto;
     min-height: 74px;
   }
   .home-content .mode-card-grid > button:nth-child(5) {
-    grid-column: span 2;
+    grid-column: auto;
   }
   .menu-lore {
     display: none;
   }
   .home-content ~ .menu-footer {
     display: none;
+  }
+}
+
+.prism-game.is-hebrew .menu-screen {
+  direction: ltr;
+}
+
+.prism-game.is-hebrew .home-content {
+  left: 50%;
+  right: auto;
+}
+
+.prism-game.is-hebrew .home-content .menu-kicker,
+.prism-game.is-hebrew .home-content .menu-actions {
+  direction: rtl;
+}
+
+.prism-game.is-hebrew .home-content .game-title {
+  align-items: flex-end;
+  margin-right: 0;
+  margin-left: auto;
+  letter-spacing: -.05em;
+}
+
+.prism-game.is-hebrew .home-content .mode-card-grid {
+  direction: ltr;
+}
+
+.prism-game.is-hebrew .home-content .mode-card-grid > button {
+  direction: rtl;
+  text-align: right;
+}
+
+/* Final campaign-menu guard: the campaign console must fit inside browser
+   viewports with visible browser chrome, without the launch button falling
+   into the bottom edge or the leaderboard forcing a horizontal squeeze. */
+@media (min-width: 981px) {
+  .mode-menu {
+    top: 92px;
+    bottom: 22px;
+    width: min(1680px, calc(100vw - 110px));
+    max-width: calc(100vw - 110px);
+    padding-bottom: 12px;
+    overflow-x: hidden;
+  }
+
+  .campaign-worlds {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .campaign-worlds button {
+    min-height: 84px;
+    padding: 12px 18px;
+  }
+
+  .campaign-sectors {
+    margin: 5px 0 0;
+  }
+
+  .stage-path {
+    margin: 6px 0 10px;
+    padding: 4px 10px 5px;
+  }
+
+  .stage-path button {
+    min-height: 72px;
+  }
+
+  .mission-layout {
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 0.36fr);
+    gap: 18px;
+    min-height: 0;
+    align-items: stretch;
+  }
+
+  .mission-brief,
+  .leaderboard-panel {
+    min-height: 0;
+  }
+
+  .mission-brief {
+    display: flex;
+    flex-direction: column;
+    padding: clamp(24px, 2.4vw, 34px);
+  }
+
+  .mission-brief h3 {
+    font-size: clamp(36px, 3.4vw, 52px);
+  }
+
+  .mission-brief > span {
+    margin-top: 12px;
+    line-height: 1.45;
+  }
+
+  .mission-specs {
+    margin-top: 17px;
+  }
+
+  .mission-specs > div {
+    min-height: 56px;
+  }
+
+  .difficulty-copy {
+    margin-top: 11px !important;
+  }
+
+  .mission-launch {
+    flex: 0 0 auto;
+    width: min(460px, 100%);
+    min-height: 54px;
+    margin-top: 16px;
+  }
+
+  .leaderboard-panel {
+    width: 100%;
+  }
+}
+
+@media (min-width: 981px) and (max-height: 760px) {
+  .mode-menu {
+    top: 86px;
+    bottom: 12px;
+  }
+
+  .campaign-worlds button {
+    min-height: 70px;
+    padding-block: 9px;
+  }
+
+  .campaign-worlds button em {
+    font-size: 5px;
+  }
+
+  .stage-path {
+    margin-bottom: 7px;
+  }
+
+  .stage-path button {
+    min-height: 62px;
+  }
+
+  .stage-path button > span {
+    width: 36px;
+    height: 36px;
+  }
+
+  .mission-brief {
+    padding: 20px 24px;
+  }
+
+  .mission-brief > p:first-child {
+    margin-bottom: 9px;
+  }
+
+  .mission-brief h3 {
+    font-size: clamp(32px, 3vw, 46px);
+  }
+
+  .mission-brief > span {
+    margin-top: 9px;
+    font-size: 9px;
+  }
+
+  .mission-specs {
+    margin-top: 12px;
+  }
+
+  .difficulty-copy {
+    margin-top: 8px !important;
+  }
+
+  .mission-launch {
+    min-height: 48px;
+    margin-top: 10px;
   }
 }
 
@@ -5274,4 +5479,73 @@ button:focus-visible {
 @keyframes prismChargeSurge {
   from { filter: brightness(1); }
   to { filter: brightness(1.4) drop-shadow(0 0 8px rgba(255, 232, 133, .55)); }
+}
+
+/* Final home-menu guard: keep the expanded Prism hub inside the viewport.
+   This intentionally lives at the end of the stylesheet so older responsive
+   patches cannot stretch the launch button or push the mode cards off-screen. */
+@media (min-width: 1101px) {
+  .menu-screen {
+    overflow: hidden;
+  }
+
+  .menu-content.home-content {
+    left: 50%;
+    right: auto;
+    width: min(920px, calc(100vw - 120px));
+    max-width: calc(100vw - 120px);
+    transform: translateX(-50%);
+  }
+
+  .home-content .menu-actions {
+    width: min(560px, 100%);
+    align-items: center;
+  }
+
+  .home-content .launch-button {
+    flex: 0 0 min(390px, 100%);
+    width: min(390px, 100%);
+    max-width: 100%;
+  }
+
+  .home-content .best-score {
+    flex: 0 1 150px;
+    min-width: 130px;
+  }
+
+  .home-content .mode-card-grid {
+    width: 100%;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .home-content .mode-card-grid > button {
+    grid-column: auto !important;
+    min-width: 0;
+  }
+}
+
+@media (min-width: 1500px) and (min-height: 760px) {
+  .menu-content.home-content {
+    width: min(980px, calc(100vw - 160px));
+    max-width: calc(100vw - 160px);
+  }
+
+  .home-content .mode-card-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.prism-game.is-hebrew .menu-content.home-content {
+  left: 50%;
+  right: auto;
+}
+
+.prism-game.is-hebrew .home-content .mode-card-grid {
+  direction: ltr;
+}
+
+.prism-game.is-hebrew .home-content .mode-card-grid > button {
+  direction: rtl;
+  text-align: right;
 }

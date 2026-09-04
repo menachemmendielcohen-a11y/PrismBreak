@@ -11,6 +11,7 @@ import {
 } from "./achievements";
 import {
   PRIME_MISSIONS,
+  PERSISTENT_POWER_IDS,
   PROGRESSION_BALANCE,
   calculatePlayerRank,
   calculateShardReward,
@@ -23,6 +24,7 @@ import {
   threatScaling,
   type PrimeBonusId,
   type PrimeMissionDefinition,
+  type PersistentPowerId,
   type ThreatModifierId,
   type ThreatScaling,
 } from "./progression";
@@ -161,7 +163,7 @@ function dropIconCell(kind: DropKind) {
 }
 
 const DROP_GUIDE = {
-  repair: { en: "REPAIR SHARD", he: "רסיס תיקון", enDetail: "Restores one full integrity point. It cannot raise health above the maximum.", heDetail: "מחזיר נקודת חיים מלאה אחת. לא יכול להעלות חיים מעל המקסימום.", enTip: "Best when one hit away from defeat.", heTip: "כדאי לאסוף כשנשארה לך נקודת חיים אחת." },
+  repair: { en: "REPAIR SHARD", he: "רסיס תיקון", enDetail: "Restores one full integrity point and adds a small temporary shield. Health cannot exceed its maximum.", heDetail: "מחזיר נקודת חיים מלאה אחת ומוסיף מגן זמני קטן. החיים לא יכולים לעבור את המקסימום.", enTip: "Best when one hit away from defeat.", heTip: "כדאי לאסוף כשנשארה לך נקודת חיים אחת." },
   overcharge: { en: "NOVA CELL", he: "תא נובה", enDetail: "Adds 48% to the Nova meter. At 100%, press E and authorize the one-coin activation.", heDetail: "מוסיף 48% למד הנובה. כשהמד מגיע ל־100%, לחץ E ואשר הפעלה תמורת מטבע אחד.", enTip: "Save it for crowded bullet patterns.", heTip: "שמור אותו לרגע שבו המסך מלא ביריות." },
   rapid: { en: "RAPID MODULE", he: "מודול ירי מהיר", enDetail: "Shortens the time between automatic shots for 14 seconds. It stacks well with rapid-fire upgrades.", heDetail: "מקצר את הזמן בין יריות אוטומטיות למשך 14 שניות. עובד מצוין יחד עם שדרוגי ירי מהיר.", enTip: "Use it against elite enemies or the boss.", heTip: "חזק במיוחד נגד אליטות או בוס." },
   smashcell: { en: "SMASH CELL", he: "תא מחץ", enDetail: "Removes 9 seconds from Prism Smash recharge. It does not activate Smash by itself.", heDetail: "מוריד 9 שניות מזמן הטעינה של מתקפת מחץ. הוא לא מפעיל את המחץ בעצמו.", enTip: "Collect it after using Smash to get it back sooner.", heTip: "אסוף אחרי שהפעלת מחץ כדי לקבל אותו שוב מהר." },
@@ -234,6 +236,7 @@ interface PlayerProfile {
   bestScores: Record<string, number>;
   prismShards: number;
   healthBonus: number;
+  unlockedPowerIds: PersistentPowerId[];
   unlockedPrimeIds: string[];
   primeBestTimes: Record<string, number>;
   highestThreat: number;
@@ -506,6 +509,7 @@ interface UiState {
   xp: number;
   nextXp: number;
   timeLeft: number;
+  timeLimited: boolean;
   wave: string;
   bossHealth: number;
   bossMaxHealth: number;
@@ -657,7 +661,7 @@ function runtimeCopy(value: string, language: Language) {
     "THE APERTURE IS SHATTERED": "המפתח נשבר", "PRISM INTEGRITY LOST": "שלמות הפריזמה אבדה",
     "SURVIVE THE SEQUENCE": "שרוד את הרצף", "DESTROY HOSTILES": "השמד אויבים", "ABSORB ENEMY FIRE": "ספוג אש אויב", "ELIMINATE ELITES": "חסל אליטות", "BREAK THE APERTURE": "שבור את המפתח",
     "CORE READY — PRESS E TO AUTHORIZE PRISM NOVA": "הליבה מוכנה — לחץ E כדי לאשר נובה", "CALIBRATION COMPLETE — HOLD THE ARENA": "הכיול הושלם — שמור על הזירה",
-    "THREAT CONTAINED": "האיום נבלם", "PRIME OBJECTIVE COMPLETE": "משימת פריים הושלמה",
+    "THREAT CONTAINED": "האיום נבלם", "PRIME OBJECTIVE COMPLETE": "שלב הבונוס הושלם",
   };
   return copy[value] ?? value;
 }
@@ -742,15 +746,15 @@ const CORE_CAMPAIGN_STAGES: StageDefinition[] = [
   },
   {
     id: 4, code: "04", name: "SIEGE", subtitle: "Hunt the elites",
-    briefing: "Minor elite signatures breach in pairs. Eliminate six of them to collapse the siege lattice.",
-    duration: 88, bossTime: null, roster: ["needle", "halo", "splitter", "lancer", "bulwark"], objective: "elites", target: 6,
+    briefing: "Minor elite signatures breach the lattice, but every hostile counts. Clear the siege at your own pace.",
+    duration: 88, bossTime: null, roster: ["needle", "halo", "splitter", "lancer", "bulwark"], objective: "kills", target: 42,
     eliteChance: 0.16, scoreTargets: [45000, 78000, 118000], maxHostiles: 14, maxActiveElites: 2, eliteTierCap: "minor",
   },
   {
     id: 5, code: "05", name: "THE APERTURE", subtitle: "End the protocol",
     briefing: "The architect enters the arena. Survive its rings, reach the core, and break the Aperture.",
-    duration: 120, bossTime: 76, roster: ["needle", "halo", "splitter", "lancer", "bulwark"], objective: "boss", target: 1,
-    eliteChance: 0.16, scoreTargets: [72000, 125000, 190000],
+    duration: 165, bossTime: 48, roster: ["needle", "halo", "splitter", "lancer", "bulwark"], objective: "boss", target: 1,
+    eliteChance: 0.1, scoreTargets: [72000, 125000, 190000], maxHostiles: 14, maxActiveElites: 1, eliteTierCap: "minor",
   },
 ];
 
@@ -787,7 +791,7 @@ const WORLD_CORE_UPGRADES: Record<1 | 2 | 3 | 4, WorldCoreUpgradeDefinition> = {
 
 const WORLD_ROSTERS: Record<1 | 2 | 3 | 4, EnemyKind[]> = {
   1: ["needle", "halo", "splitter", "lancer", "bulwark"],
-  2: ["skimmer", "weaver", "needle", "halo"],
+  2: ["skimmer", "needle", "halo", "weaver"],
   3: ["warden", "siphon", "splitter", "bulwark"],
   4: ["phantom", "oracle", "lancer", "weaver"],
 };
@@ -818,25 +822,38 @@ const GENERATED_STAGE_NAMES = [
 function generatedCampaignStage(id: number): StageDefinition {
   const world = campaignWorldForStage(id);
   const worldProgress = (id - world.start) / Math.max(1, world.end - world.start);
+  const stageInWorld = id - world.start + 1;
   const isWorldBoss = id === world.end;
-  const roster: EnemyKind[] = [...WORLD_ROSTERS[world.id]];
+  const worldRoster = WORLD_ROSTERS[world.id];
+  const rosterLimit = world.id === 2
+    ? stageInWorld <= 3 ? 2 : stageInWorld <= 8 ? 3 : worldRoster.length
+    : worldRoster.length;
+  const roster: EnemyKind[] = worldRoster.slice(0, rosterLimit);
   const objective: ObjectiveKind = isWorldBoss
     ? "boss"
     : id <= 10
       ? id % 3 === 0 ? "kills" : "survive"
-      : id % 5 === 0 ? "elites" : id % 4 === 0 ? "absorb" : id % 3 === 0 ? "kills" : "survive";
-  const duration = Math.round(54 + world.id * 10 + worldProgress * 22);
+      : world.id === 2 && stageInWorld <= 5
+        ? stageInWorld === 3 ? "kills" : "survive"
+      : id % 3 === 0 || id % 5 === 0 ? "kills" : "survive";
+  const duration = Math.round((isWorldBoss ? 112 : 54) + world.id * 10 + worldProgress * (isWorldBoss ? 34 : 22));
   const target = objective === "boss"
     ? 1
-    : objective === "elites"
-      ? Math.min(10, 4 + world.id)
-      : objective === "absorb"
-        ? 16 + world.id * 7 + Math.floor(worldProgress * 12)
-        : objective === "kills"
-          ? id <= 10 ? 20 + id * 2 : 28 + world.id * 9 + Math.floor(worldProgress * 15)
-          : duration;
+    : objective === "kills"
+      ? id <= 10 ? 20 + id * 2 : world.id === 2 ? 24 + Math.floor(worldProgress * 10) : 28 + world.id * 9 + Math.floor(worldProgress * 15)
+      : duration;
   const mastery = Math.round(8500 + id * 2400 + Math.pow(id, 1.18) * 380);
   const modifiers = id >= 26 ? selectThreatModifiers(id) : [];
+  const generatedEliteChance = id <= 10
+    ? 0.06
+    : world.id === 2
+      ? stageInWorld <= 5 ? 0.025 : stageInWorld <= 10 ? 0.045 : 0.065
+      : id <= 50 ? 0.12 : 0.15;
+  const generatedMaxHostiles = id <= 10
+    ? 18
+    : world.id === 2
+      ? stageInWorld <= 5 ? 17 : stageInWorld <= 10 ? 20 : 22
+      : id <= 50 ? 30 : 36;
   const titleIndex = (id * 7 + world.id * 3) % GENERATED_STAGE_NAMES.length;
   return {
     id,
@@ -847,17 +864,17 @@ function generatedCampaignStage(id: number): StageDefinition {
       ? `The ${world.name.toLowerCase()} core is exposed. Survive its final pattern and break the world signal.`
       : `Advance through ${world.name.toLowerCase()}, read the new formations, and complete the marked objective.`,
     duration,
-    bossTime: isWorldBoss ? Math.round(duration * 0.62) : null,
+    bossTime: isWorldBoss ? Math.round(duration * 0.42) : null,
     roster,
     objective,
     target,
-    eliteChance: id <= 10 ? 0.06 : id <= 25 ? 0.09 : id <= 50 ? 0.12 : 0.15,
+    eliteChance: generatedEliteChance,
     scoreTargets: [Math.round(mastery * 0.62), mastery, Math.round(mastery * 1.5)],
     world: world.id,
     modifiers,
-    maxHostiles: id <= 10 ? 18 : id <= 25 ? 24 : id <= 50 ? 30 : 36,
-    maxActiveElites: MAX_HOSTILE_ELITES,
-    eliteTierCap: id <= 10 ? "minor" : "major",
+    maxHostiles: generatedMaxHostiles,
+    maxActiveElites: world.id === 2 ? stageInWorld <= 10 ? 1 : 2 : MAX_HOSTILE_ELITES,
+    eliteTierCap: id <= 25 ? "minor" : "major",
   };
 }
 
@@ -884,6 +901,7 @@ const DEFAULT_PROFILE: PlayerProfile = {
   bestScores: {},
   prismShards: 0,
   healthBonus: 0,
+  unlockedPowerIds: [],
   unlockedPrimeIds: [],
   primeBestTimes: {},
   highestThreat: 0,
@@ -911,11 +929,18 @@ function seedFromText(value: string) {
   return hash >>> 0;
 }
 
+function campaignScalingLevel(stageId: number) {
+  if (stageId <= 10) return Math.max(1, stageId);
+  if (stageId <= 15) return 8 + (stageId - 10) * 0.55;
+  if (stageId <= 25) return 11 + (stageId - 15) * 0.9;
+  return stageId;
+}
+
 function makeRunConfig(runMode: RunMode, stageId = 0, difficulty: Difficulty = "cadet", dailyKey: string | null = null): RunConfig {
   const baseScaling = threatScaling(1, []);
   if (runMode === "campaign") {
     const stage = CAMPAIGN_STAGES[clamp(Math.round(stageId), 0, CAMPAIGN_STAGES.length - 1)];
-    const stageScaling = threatScaling(Math.max(1, stage.id), stage.modifiers ?? []);
+    const stageScaling = threatScaling(campaignScalingLevel(stage.id), stage.modifiers ?? []);
     return {
       runMode, stageId: stage.id, difficulty, duration: stage.duration, bossTime: stage.bossTime,
       roster: stage.roster, objective: stage.objective, objectiveTarget: stage.target,
@@ -975,6 +1000,7 @@ const EMPTY_UI: UiState = {
   mode: "menu", score: 0, combo: 1, health: 3, maxHealth: 3, coinsCollected: 0, shield: 0,
   charge: 0, dash: 1, smash: 1, rapidBuff: 0, doubleShotBuff: 0, pierceBuff: 0, stasisBuff: 0, resonanceBuff: 0, allyCount: 0,
   level: 1, xp: 0, nextXp: 12, timeLeft: RUN_TIME,
+  timeLimited: true,
   wave: "CALIBRATION", bossHealth: 0, bossMaxHealth: 0, choices: [], upgrades: {}, kills: 0,
   eliteKills: 0, absorbed: 0, hitsTaken: 0, novasUsed: 0, bestCombo: 1, reason: "",
   runMode: "campaign", stageId: 0, difficulty: "cadet", objectiveLabel: "SURVIVE CALIBRATION",
@@ -1084,6 +1110,10 @@ function objectiveLabel(game: Game) {
   return "BREAK THE APERTURE";
 }
 
+function hasFailureTimer(config: RunConfig) {
+  return config.objective === "survive" || config.runMode === "daily" || config.runMode === "arcade";
+}
+
 function guideText(game: Game) {
   if (game.config.runMode !== "campaign" || game.config.stageId !== 0 || game.mode !== "playing") return "";
   if (game.elapsed < 5) return "MOVE WITH THE MOUSE OR THE LEFT TOUCH FIELD";
@@ -1180,7 +1210,7 @@ function spawnEnemy(game: Game, kind: EnemyKind, x?: number, y?: number, elite =
     siphon: { r: 22, hp: 18, fire: 2.3 },
     phantom: { r: 18, hp: 13, fire: 2.4 },
     oracle: { r: 30, hp: 25, fire: 2.6 },
-    boss: { r: 74, hp: 520, fire: 1.15 },
+    boss: { r: 68, hp: 440, fire: 1.35 },
   };
   const stat = stats[kind];
   const eliteAllowed = elite && kind !== "boss" && kind !== "warden" && kind !== "siphon" && kind !== "phantom" && kind !== "oracle" && hostileEliteCount(game) < game.config.maxActiveElites;
@@ -1409,7 +1439,7 @@ function collectPowerDrop(game: Game, drop: PowerDrop) {
   } else if (drop.kind === "overcharge") {
     game.charge = Math.min(100, game.charge + 48);
   } else if (drop.kind === "rapid") {
-    game.rapidBuff = Math.max(game.rapidBuff, 11);
+    game.rapidBuff = Math.max(game.rapidBuff, 14);
   } else if (drop.kind === "smashcell") {
     game.smashCooldown = Math.max(0, game.smashCooldown - 9);
   } else if (drop.kind === "cooldown") {
@@ -1732,7 +1762,7 @@ function triggerRefraction(game: Game) {
 }
 
 function triggerNova(game: Game) {
-  if (game.charge < 100 || game.mode !== "playing") return;
+  if (game.mode !== "playing") return;
   game.charge = 0;
   game.novasUsed += 1;
   game.nova = 1;
@@ -2008,18 +2038,18 @@ function updateEnemy(game: Game, enemy: Enemy, dt: number) {
     enemy.vy += (targetY - enemy.y) * dt * 1.25;
     enemy.angle += dt * (hpRatio > 0.55 ? 0.55 : hpRatio > 0.25 ? 0.9 : 1.3);
     if (enemy.fire <= 0 && enemy.age > 1.5) {
-      const count = hpRatio > 0.58 ? 18 : hpRatio > 0.28 ? 22 : 26;
-      const speed = hpRatio > 0.58 ? 190 : hpRatio > 0.28 ? 235 : 275;
+      const count = hpRatio > 0.58 ? 12 : hpRatio > 0.28 ? 16 : 20;
+      const speed = hpRatio > 0.58 ? 168 : hpRatio > 0.28 ? 205 : 238;
       for (let i = 0; i < count; i += 1) {
         const angle = enemy.angle + i * TAU / count;
         if ((i + Math.floor(enemy.age)) % 6 !== 0) spawnEnemyBullet(game, enemy, angle, speed, i % 2 ? "#c179ff" : "#ff5ba8", 6.5, { spectrum: SPECTRUM_IDS[(i + Math.floor(enemy.age / 2)) % SPECTRUM_IDS.length] });
       }
       if (hpRatio < 0.62) {
         const aimed = Math.atan2(dy, dx);
-        [-0.22, -0.11, 0, 0.11, 0.22].forEach((offset) => spawnEnemyBullet(game, enemy, aimed + offset, 330, "#ff704d", 6));
+        [-0.18, 0, 0.18].forEach((offset) => spawnEnemyBullet(game, enemy, aimed + offset, 282, "#ff704d", 6));
       }
-      enemy.fire = hpRatio > 0.58 ? 1.28 : hpRatio > 0.28 ? 0.94 : 0.67;
-      game.shake = Math.max(game.shake, 4);
+      enemy.fire = hpRatio > 0.58 ? 1.55 : hpRatio > 0.28 ? 1.16 : 0.88;
+      game.shake = Math.max(game.shake, 3);
     }
   }
 
@@ -2038,7 +2068,7 @@ function completeRunObjective(game: Game) {
   const progress = objectiveProgress(game);
   const complete = progress >= game.config.objectiveTarget;
   if (!complete) return false;
-  const remaining = Math.max(0, game.config.duration - game.elapsed);
+  const remaining = hasFailureTimer(game.config) ? Math.max(0, game.config.duration - game.elapsed) : 0;
   game.score += Math.round(remaining * 90 * DIFFICULTIES[game.config.difficulty].scoreMultiplier);
   game.mode = "victory";
   game.reason = game.config.runMode === "threat" ? "THREAT CONTAINED" : game.config.runMode === "prime" ? "PRIME OBJECTIVE COMPLETE" : game.config.stageId === 0 ? "CALIBRATION COMPLETE" : "MISSION OBJECTIVE COMPLETE";
@@ -2052,21 +2082,12 @@ function updateGame(game: Game, input: InputState, dt: number) {
   if (game.mode !== "playing") return;
   if (input.nova) {
     input.nova = false;
-    if (game.charge >= 100) {
-      input.dash = false;
-      input.smash = false;
-      input.blast = false;
-      input.refract = false;
-      game.mode = "nova-confirm";
-      return;
-    }
-    game.texts.push({
-      x: game.player.x,
-      y: game.player.y - 42,
-      text: "NOVA CORE NOT READY",
-      color: "#ffe486",
-      life: 0.75,
-    });
+    input.dash = false;
+    input.smash = false;
+    input.blast = false;
+    input.refract = false;
+    game.mode = "nova-confirm";
+    return;
   }
   const player = game.player;
   const difficulty = DIFFICULTIES[game.config.difficulty];
@@ -2114,12 +2135,15 @@ function updateGame(game: Game, input: InputState, dt: number) {
         enemy.dead = true;
       }
     }
+    for (const bullet of game.bullets) {
+      if (bullet.enemy) bullet.dead = true;
+    }
     spawnEnemy(game, "boss");
   }
 
-  if (game.elapsed >= game.config.duration && !game.bossDefeated) {
+  if (hasFailureTimer(game.config) && game.elapsed >= game.config.duration && !game.bossDefeated) {
     game.mode = "gameover";
-    game.reason = game.config.stageId === 0 ? "COMPLETE THE NOVA SEQUENCE" : "THE RIFT COLLAPSED";
+    game.reason = game.config.runMode === "campaign" && game.config.stageId === 0 ? "COMPLETE THE NOVA SEQUENCE" : "THE RIFT COLLAPSED";
     return;
   }
 
@@ -2127,7 +2151,7 @@ function updateGame(game: Game, input: InputState, dt: number) {
   const firstMission = game.config.runMode === "campaign" && game.config.stageId === 1;
   const maxEnemies = game.config.maxHostiles ?? (firstMission ? 12 : game.config.runMode === "threat" || game.config.runMode === "prime" ? game.config.scaling.maxEnemies : game.config.difficulty === "cadet" ? 28 : game.config.difficulty === "overdrive" ? 46 : 38);
   const hostileCount = game.enemies.reduce((count, enemy) => count + (!enemy.dead && !enemy.ally ? 1 : 0), 0);
-  if (!game.bossSpawned && game.spawnTimer <= 0 && hostileCount < maxEnemies && (game.config.stageId !== 0 || game.elapsed > 4)) {
+  if (!game.bossSpawned && game.spawnTimer <= 0 && hostileCount < maxEnemies && (game.config.runMode !== "campaign" || game.config.stageId !== 0 || game.elapsed > 4)) {
     const selectedKind = selectEnemyKind(game);
     const eliteScale = game.config.difficulty === "cadet" ? 0.45 : game.config.difficulty === "overdrive" ? 1.45 : 1;
     const eliteCadence = Math.max(6, (game.config.duration - 18) / Math.max(1, game.config.objectiveTarget));
@@ -2140,7 +2164,7 @@ function updateGame(game: Game, input: InputState, dt: number) {
     spawnEnemy(game, kind, undefined, undefined, elite);
     if (game.elapsed > game.config.duration * 0.55 && rand(game) < 0.24) spawnEnemy(game, rand(game) < 0.7 ? "needle" : "halo");
     const baseInterval = Math.max(0.25, 0.84 - game.elapsed * 0.0045) * (0.78 + rand(game) * 0.5);
-    const trainingScale = game.config.stageId === 0 ? 1.38 : firstMission ? 1.72 : 1;
+    const trainingScale = game.config.runMode === "campaign" && game.config.stageId === 0 ? 1.38 : firstMission ? 1.72 : 1;
     game.spawnTimer = baseInterval * trainingScale / (difficulty.spawnRate * game.config.scaling.spawnRate);
   }
 
@@ -2446,7 +2470,7 @@ function updateGame(game: Game, input: InputState, dt: number) {
 
   if (completeRunObjective(game)) return;
 
-  if (game.xp >= game.nextXp && game.mode === "playing" && !game.bossDefeated && game.config.stageId !== 0) {
+  if (game.xp >= game.nextXp && game.mode === "playing" && !game.bossDefeated && (game.config.runMode !== "campaign" || game.config.stageId !== 0)) {
     game.xp -= game.nextXp;
     game.level += 1;
     game.nextXp = Math.round(10 + game.level * 5.5);
@@ -2481,7 +2505,8 @@ function snapshot(game: Game): UiState {
     level: game.level,
     xp: game.xp,
     nextXp: game.nextXp,
-    timeLeft: Math.max(0, game.config.duration - game.elapsed),
+    timeLeft: hasFailureTimer(game.config) ? Math.max(0, game.config.duration - game.elapsed) : game.elapsed,
+    timeLimited: hasFailureTimer(game.config),
     wave: waveLabel(game),
     bossHealth: boss?.hp ?? 0,
     bossMaxHealth: boss?.maxHp ?? 0,
@@ -2688,6 +2713,114 @@ function drawMenuAperture(ctx: CanvasRenderingContext2D, game: Game) {
   ctx.restore();
 }
 
+function drawApertureBoss(ctx: CanvasRenderingContext2D, enemy: Enemy, time: number, color: string, highContrast: boolean, reducedMotion = false) {
+  const hpRatio = clamp(enemy.hp / Math.max(1, enemy.maxHp), 0, 1);
+  const weak = enemy.weakPointTimer > 0;
+  const pulse = reducedMotion ? 1 : 1 + Math.sin(time * 2.35 + enemy.id) * 0.018;
+  const spin = enemy.angle;
+  const outer = enemy.r * 1.34;
+  const inner = enemy.r * 0.52;
+
+  ctx.save();
+  ctx.scale(pulse, pulse);
+
+  ctx.globalCompositeOperation = "lighter";
+  const aura = ctx.createRadialGradient(0, 0, 0, 0, 0, enemy.r * 2.05);
+  aura.addColorStop(0, weak ? "rgba(255,239,160,.28)" : "rgba(201,145,255,.22)");
+  aura.addColorStop(0.36, "rgba(101,240,255,.10)");
+  aura.addColorStop(0.72, "rgba(180,80,255,.055)");
+  aura.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = aura;
+  ctx.beginPath();
+  ctx.arc(0, 0, enemy.r * 2.05, 0, TAU);
+  ctx.fill();
+  ctx.globalCompositeOperation = "source-over";
+
+  ctx.save();
+  ctx.rotate(spin * 0.16);
+  ctx.fillStyle = "rgba(5,8,20,.82)";
+  ctx.strokeStyle = weak ? "#fff0a1" : "rgba(201,145,255,.78)";
+  ctx.lineWidth = highContrast ? 3.8 : 2.4;
+  polygon(ctx, 8, outer, Math.PI / 8);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+
+  for (let ring = 0; ring < 3; ring += 1) {
+    ctx.save();
+    ctx.rotate(spin * (ring % 2 ? -0.42 : 0.34) + ring * 0.75);
+    ctx.strokeStyle = ring === 0 ? "rgba(101,240,255,.78)" : ring === 1 ? "rgba(199,110,255,.68)" : "rgba(255,240,161,.48)";
+    ctx.lineWidth = highContrast ? 3 : 1.8;
+    ctx.setLineDash(ring === 0 ? [enemy.r * 0.42, enemy.r * 0.18] : [enemy.r * 0.24, enemy.r * 0.25]);
+    ctx.beginPath();
+    ctx.arc(0, 0, enemy.r * (1.05 - ring * 0.17), time * (0.18 + ring * 0.08), time * (0.18 + ring * 0.08) + TAU);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  for (let i = 0; i < SPECTRUM_IDS.length; i += 1) {
+    const spectrum = SPECTRUM_IDS[i];
+    const info = SPECTRUM_INFO[spectrum];
+    const angle = spin * 0.28 + i * TAU / SPECTRUM_IDS.length + Math.PI / 4;
+    const x = Math.cos(angle) * enemy.r * 1.15;
+    const y = Math.sin(angle) * enemy.r * 1.15;
+    const active = enemy.shieldSpectrum === spectrum || weak;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(angle + Math.PI / 4);
+    ctx.shadowColor = info.color;
+    ctx.shadowBlur = active ? 18 : 8;
+    ctx.fillStyle = active ? info.color : "rgba(7,12,24,.78)";
+    ctx.strokeStyle = info.color;
+    ctx.lineWidth = active ? 2.3 : 1.25;
+    ctx.globalAlpha = active ? 0.96 : 0.64;
+    polygon(ctx, 4, enemy.r * 0.16, Math.PI / 4);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  ctx.save();
+  ctx.rotate(-spin * 0.62);
+  ctx.fillStyle = "rgba(1,3,10,.92)";
+  ctx.strokeStyle = weak ? "#fff0a1" : color;
+  ctx.lineWidth = highContrast ? 3.5 : 2.2;
+  polygon(ctx, 4, enemy.r * 0.68, Math.PI / 4);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.save();
+  ctx.rotate(spin * 0.9);
+  const coreGlow = weak ? "#fff0a1" : hpRatio < 0.34 ? "#ff5ba8" : "#65efff";
+  ctx.shadowColor = coreGlow;
+  ctx.shadowBlur = weak ? 28 : 18;
+  ctx.fillStyle = hpRatio < 0.34 ? "rgba(255,91,168,.86)" : weak ? "rgba(255,240,161,.88)" : "rgba(101,240,255,.82)";
+  ctx.strokeStyle = "#ffffff";
+  ctx.lineWidth = 1.7;
+  polygon(ctx, 4, inner, Math.PI / 4);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+
+  if (hpRatio < 0.62) {
+    ctx.save();
+    ctx.globalAlpha = hpRatio < 0.3 ? 0.82 : 0.52;
+    ctx.strokeStyle = "rgba(255,255,255,.72)";
+    ctx.lineWidth = 1.2;
+    for (let i = 0; i < 5; i += 1) {
+      const angle = spin * -0.21 + i * TAU / 5;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(angle) * enemy.r * 0.34, Math.sin(angle) * enemy.r * 0.34);
+      ctx.lineTo(Math.cos(angle + 0.16) * enemy.r * (0.82 + (i % 2) * 0.24), Math.sin(angle + 0.16) * enemy.r * (0.82 + (i % 2) * 0.24));
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  ctx.restore();
+}
+
 function drawEnemy(ctx: CanvasRenderingContext2D, enemy: Enemy, time: number, highContrast: boolean, reducedMotion = false) {
   const color = ENEMY_COLOR[enemy.kind];
   const appearLinear = clamp(enemy.age / 0.55, 0, 1);
@@ -2720,12 +2853,14 @@ function drawEnemy(ctx: CanvasRenderingContext2D, enemy: Enemy, time: number, hi
 
   const enemyImage = enemyVisualImages[enemy.visualIndex];
   const spriteReady = Boolean(enemyImage?.complete && enemyImage.naturalWidth > 0);
-  if (spriteReady && enemyImage) {
+  if (enemy.kind === "boss") {
+    drawApertureBoss(ctx, enemy, time, color, highContrast, reducedMotion);
+  } else if (spriteReady && enemyImage) {
     const directional = enemy.kind === "needle" || enemy.kind === "lancer" || enemy.kind === "skimmer" || enemy.kind === "phantom";
     const rotation = directional ? enemy.angle + Math.PI / 2 : enemy.angle * 0.32;
     const livingPulse = reducedMotion ? 1 : 1 + Math.sin(time * (enemy.elite ? 5.2 : 3.1) + enemy.id) * (enemy.elite ? 0.055 : 0.027);
     const attackPulse = enemy.fire < 0.24 ? 1 + (0.24 - enemy.fire) * 0.22 : 1;
-    const size = enemy.r * (enemy.kind === "boss" ? 3.25 : 2.85) * livingPulse * attackPulse;
+    const size = enemy.r * 2.85 * livingPulse * attackPulse;
     ctx.save();
     ctx.rotate(rotation);
     ctx.globalAlpha *= enemy.kind === "phantom" ? 0.78 + Math.sin(time * 7 + enemy.id) * 0.16 : 1;
@@ -2744,19 +2879,6 @@ function drawEnemy(ctx: CanvasRenderingContext2D, enemy: Enemy, time: number, hi
     }
     ctx.drawImage(enemyImage, -size / 2, -size / 2, size, size);
     ctx.restore();
-    if (enemy.kind === "boss") {
-      ctx.save();
-      ctx.rotate(enemy.angle * 0.35);
-      ctx.strokeStyle = enemy.weakPointTimer > 0 ? "#fff0a1" : color;
-      ctx.globalAlpha = 0.7;
-      for (let ring = 2; ring >= 1; ring -= 1) {
-        ctx.rotate((ring % 2 ? 1 : -1) * time * 0.006);
-        ctx.lineWidth = ring === 1 ? 2.5 : 1.2;
-        polygon(ctx, ring === 1 ? 6 : 8, enemy.r * (0.88 + ring * 0.35), Math.PI / 8);
-        ctx.stroke();
-      }
-      ctx.restore();
-    }
   } else if (enemy.kind === "needle") {
     ctx.rotate(enemy.angle + Math.PI / 2);
     ctx.beginPath();
@@ -3397,7 +3519,12 @@ function renderGame(ctx: CanvasRenderingContext2D, game: Game, view: Viewport, i
 class AudioEngine {
   private context: AudioContext | null = null;
   private master: GainNode | null = null;
+  private musicGain: GainNode | null = null;
   private ambience: OscillatorNode[] = [];
+  private musicTimer: number | null = null;
+  private nextMusicTime = 0;
+  private musicStep = 0;
+  private musicIntensity = 0.25;
   private enabled = true;
   private lastShot = 0;
 
@@ -3412,6 +3539,7 @@ class AudioEngine {
       this.master.connect(compressor);
       compressor.connect(this.context.destination);
       this.startAmbience();
+      this.startMusic();
     }
     if (this.context.state === "suspended") await this.context.resume();
   }
@@ -3429,6 +3557,112 @@ class AudioEngine {
       oscillator.start();
       this.ambience.push(oscillator);
     });
+  }
+
+  private startMusic() {
+    if (!this.context || !this.master || this.musicTimer !== null) return;
+    this.musicGain = this.context.createGain();
+    this.musicGain.gain.value = 0.32;
+    this.musicGain.connect(this.master);
+    this.nextMusicTime = this.context.currentTime + 0.05;
+    this.musicStep = 0;
+    this.musicTimer = window.setInterval(() => this.scheduleMusic(), 90);
+    this.scheduleMusic();
+  }
+
+  private scheduleMusicVoice(frequency: number, start: number, duration: number, type: OscillatorType, volume: number, detune = 0) {
+    if (!this.context || !this.musicGain) return;
+    const oscillator = this.context.createOscillator();
+    const gain = this.context.createGain();
+    oscillator.type = type;
+    oscillator.frequency.setValueAtTime(frequency, start);
+    oscillator.detune.setValueAtTime(detune, start);
+    gain.gain.setValueAtTime(0.0001, start);
+    gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, volume), start + Math.min(0.035, duration * 0.18));
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+    oscillator.connect(gain);
+    gain.connect(this.musicGain);
+    oscillator.start(start);
+    oscillator.stop(start + duration + 0.03);
+    oscillator.addEventListener("ended", () => { oscillator.disconnect(); gain.disconnect(); }, { once: true });
+  }
+
+  private scheduleMusicNoise(start: number, duration: number, volume: number, highpass = 6000) {
+    if (!this.context || !this.musicGain) return;
+    const count = Math.max(1, Math.round(duration * this.context.sampleRate));
+    const buffer = this.context.createBuffer(1, count, this.context.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < count; i++) {
+      const t = i / count;
+      data[i] = (Math.random() * 2 - 1) * Math.pow(1 - t, 2.6);
+    }
+    const noise = this.context.createBufferSource();
+    const filter = this.context.createBiquadFilter();
+    const gain = this.context.createGain();
+    noise.buffer = buffer;
+    filter.type = "highpass";
+    filter.frequency.setValueAtTime(highpass, start);
+    gain.gain.setValueAtTime(Math.max(0.0001, volume), start);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+    noise.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.musicGain);
+    noise.start(start);
+    noise.stop(start + duration + 0.02);
+    noise.addEventListener("ended", () => { noise.disconnect(); filter.disconnect(); gain.disconnect(); }, { once: true });
+  }
+
+  private scheduleMusic() {
+    if (!this.context || !this.musicGain) return;
+    const beat = 60 / 118 / 2;
+    const bass = [55, 55, 65.41, 55, 73.42, 65.41, 49, 55, 55, 82.41, 73.42, 65.41, 49, 55, 65.41, 73.42];
+    const melody = [
+      440, 493.88, 523.25, 659.25, 587.33, 523.25, 493.88, 392,
+      440, 523.25, 659.25, 783.99, 739.99, 659.25, 587.33, 523.25,
+      392, 440, 493.88, 587.33, 659.25, 587.33, 523.25, 493.88,
+      440, 493.88, 523.25, 659.25, 880, 783.99, 659.25, 587.33,
+    ];
+    const counter = [220, 246.94, 261.63, 329.63, 293.66, 261.63, 246.94, 196];
+    const chords = [
+      [110, 164.81, 220],
+      [98, 146.83, 196],
+      [130.81, 196, 261.63],
+      [82.41, 123.47, 164.81],
+    ];
+    const horizon = this.context.currentTime + 0.42;
+    while (this.nextMusicTime < horizon) {
+      const step = this.musicStep % 32;
+      const intensity = this.musicIntensity;
+      const phrase = Math.floor(this.musicStep / 32) % 4;
+      this.scheduleMusicVoice(bass[step % bass.length], this.nextMusicTime, beat * 0.9, "triangle", 0.024 + intensity * 0.012);
+      if (step % 4 === 0) {
+        const chord = chords[(step / 8 | 0) % chords.length];
+        for (const note of chord) this.scheduleMusicVoice(note, this.nextMusicTime, beat * 7.2, "sine", 0.006 + intensity * 0.003, -3);
+      }
+      if (step % 2 === 0 || (intensity > 0.55 && step % 4 === 3)) {
+        const noteIndex = (step + phrase * 5) % melody.length;
+        const note = melody[noteIndex] * (phrase === 3 && step > 20 ? 1.5 : 1);
+        this.scheduleMusicVoice(note, this.nextMusicTime, beat * (1.05 + intensity * 0.25), "sine", 0.014 + intensity * 0.015, step % 4 === 0 ? -7 : 7);
+        this.scheduleMusicVoice(note * 2, this.nextMusicTime + beat * 0.08, beat * 0.62, "triangle", 0.004 + intensity * 0.007);
+      }
+      if (step % 8 === 6) {
+        this.scheduleMusicVoice(counter[(step / 2 | 0) % counter.length], this.nextMusicTime, beat * 1.6, "sine", 0.007 + intensity * 0.006, 5);
+      }
+      if (step % 8 === 0 || (intensity > 0.7 && step % 8 === 4)) {
+        this.scheduleMusicVoice(44, this.nextMusicTime, beat * 0.48, "sine", 0.04 + intensity * 0.012);
+      }
+      if (step % 8 === 4) {
+        this.scheduleMusicNoise(this.nextMusicTime, beat * 0.34, 0.018 + intensity * 0.01, 2200);
+      } else if (step % 2 === 1) {
+        this.scheduleMusicNoise(this.nextMusicTime, beat * 0.14, 0.004 + intensity * 0.004, 7600);
+      }
+      this.nextMusicTime += beat;
+      this.musicStep += 1;
+    }
+  }
+
+  setIntensity(value: number) {
+    this.musicIntensity = clamp(value, 0.12, 1);
   }
 
   setEnabled(enabled: boolean) {
@@ -3472,6 +3706,10 @@ class AudioEngine {
   }
 
   close() {
+    if (this.musicTimer !== null) window.clearInterval(this.musicTimer);
+    this.musicTimer = null;
+    this.musicGain?.disconnect();
+    this.musicGain = null;
     for (const oscillator of this.ambience) {
       try { oscillator.stop(); } catch { /* already stopped */ }
     }
@@ -3650,8 +3888,10 @@ export default function PrismBreak() {
         const storedLanguage = localStorage.getItem("prism-break-language-v1");
         if (storedLanguage === "he" || storedLanguage === "en") { languageRef.current = storedLanguage; setLanguage(storedLanguage); }
         const reduced = localStorage.getItem("prism-break-motion") === "reduced" || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        const contrast = localStorage.getItem("prism-break-contrast") === "high";
         setSound(!muted);
         setReducedMotion(reduced);
+        setHighContrast(contrast);
         const storedBindings = JSON.parse(localStorage.getItem("prism-break-bindings-v1") || "null") as Partial<KeyBindings> | null;
         if (storedBindings) {
           const nextBindings = (Object.keys(DEFAULT_BINDINGS) as BindingAction[]).reduce<KeyBindings>((next, action) => {
@@ -3674,6 +3914,7 @@ export default function PrismBreak() {
     try {
       localStorage.setItem("prism-break-sound", sound ? "on" : "off");
       localStorage.setItem("prism-break-motion", reducedMotion ? "reduced" : "full");
+      localStorage.setItem("prism-break-contrast", highContrast ? "high" : "normal");
     } catch { /* storage is optional */ }
   }, [sound, reducedMotion, highContrast]);
 
@@ -3785,6 +4026,7 @@ export default function PrismBreak() {
         bestScores: { ...previous.bestScores, [key]: Math.max(previous.bestScores[key] ?? 0, ui.score) },
         prismShards: previous.prismShards + earnedShards + achievementEvaluation.reward,
         healthBonus: previous.healthBonus,
+        unlockedPowerIds: [...new Set([...previous.unlockedPowerIds, ...PERSISTENT_POWER_IDS.filter((id) => game.unlockedPowers[id])])],
         unlockedPrimeIds: previous.unlockedPrimeIds,
         primeBestTimes: nextPrimeTimes,
         highestThreat: nextHighestThreat,
@@ -3895,9 +4137,11 @@ export default function PrismBreak() {
         setCapturingBinding(null);
         return;
       }
-      if (isKeyboardControlTarget(eventValue.target)) return;
-      input.keys[eventValue.code] = true;
       const game = gameRef.current;
+      // Menu controls keep normal keyboard activation. During a run, gameplay
+      // shortcuts must still work if a HUD button happens to retain focus.
+      if (game.mode === "menu" && isKeyboardControlTarget(eventValue.target)) return;
+      input.keys[eventValue.code] = true;
       // B is a presentation toggle, so it should remain available while any
       // in-game screen is open (playing, paused, or an upgrade choice). It is
       // intentionally ignored only on the main menu and inside text inputs.
@@ -4020,6 +4264,7 @@ export default function PrismBreak() {
       const game = gameRef.current;
       game.visualTime += frameDt;
       game.reducedMotion = prefsRef.current.reduced;
+      audioRef.current?.setIntensity(game.mode === "playing" ? game.bossSpawned ? 1 : 0.56 + Math.min(0.24, game.elapsed / Math.max(1, game.config.duration) * 0.24) : game.mode === "menu" ? 0.18 : 0.34);
 
       if (game.mode === "playing") {
         if (game.hitStop > 0) game.hitStop = Math.max(0, game.hitStop - frameDt);
@@ -4088,6 +4333,7 @@ export default function PrismBreak() {
       : (((performance.now() * 1000) ^ seedFromText(`${runMode}:${stageId}:${safeDifficulty}`)) >>> 0);
     const game = createGame(seed, "playing", config);
     game.worldCoreUpgrades = profile.worldCoreUpgrades;
+    game.unlockedPowers = Object.fromEntries(profile.unlockedPowerIds.map((id) => [id, true])) as Partial<Record<UpgradeId, boolean>>;
     game.player.maxHealth += profile.healthBonus;
     game.player.maxHealth = Math.max(1, game.player.maxHealth - config.scaling.integrityPenalty);
     game.player.health = game.player.maxHealth;
@@ -4146,7 +4392,7 @@ export default function PrismBreak() {
 
   const confirmNovaPurchase = useCallback(() => {
     const game = gameRef.current;
-    if (game.mode !== "nova-confirm" || game.coinsCollected < NOVA_COIN_COST || game.charge < 100) return;
+    if (game.mode !== "nova-confirm" || game.coinsCollected < NOVA_COIN_COST) return;
     game.coinsCollected -= NOVA_COIN_COST;
     game.mode = "playing";
     inputRef.current.dash = false;
@@ -4441,7 +4687,7 @@ export default function PrismBreak() {
                         <p className="prime-description">{language === "he" ? mission.hebrewDescription : mission.description}</p>
                         <p className="prime-objective"><b>{tr(language, "FUN OBJECTIVE", "מטרת הבונוס")}</b>{primeObjectiveCopy(mission, language)}</p>
                         <div className="modifier-tags prime-bonus-tags">{mission.bonuses.map((id) => <span key={id}>{primeBonusCopy(id, language)}</span>)}</div>
-                        <dl><div><dt>{tr(language, "REQUIRED RANK", "דרגה נדרשת")}</dt><dd>{mission.requiredRank}</dd></div><div><dt>{tr(language, "POTENTIAL YIELD", "תגמול אפשרי")}</dt><dd>◇ {mission.reward[0]}–{mission.reward[1]}</dd></div></dl>
+                        <dl><div><dt>{tr(language, "REQUIRED RANK", "דרגה נדרשת")}</dt><dd>{mission.requiredRank}</dd></div><div><dt>{tr(language, "MISSION REWARD + DROPS", "פרס משימה + דרופים")}</dt><dd>◇ {mission.reward[0]}–{mission.reward[1]}+</dd></div></dl>
                         {unlocked ? <button onClick={(eventValue) => { eventValue.stopPropagation(); launchGame("prime", index, "cadet"); }}>{tr(language, "START BONUS STAGE", "התחל שלב בונוס")}</button> : <button disabled={!canBuy} onClick={(eventValue) => { eventValue.stopPropagation(); unlockPrimeMission(mission, playerRank); }}>{rankReady ? `◇ ${mission.unlockCost} // ${tr(language, "UNLOCK ONCE", "פתיחה חד־פעמית")}` : `${tr(language, "RANK", "דרגה")} ${mission.requiredRank}`}</button>}
                       </article>;
                     })}
@@ -4601,13 +4847,13 @@ ONE TRUE SHAPE.", "כל חתימה.
               <small>{tr(language, "PRISM INTEGRITY", "שלמות פריזמה")}</small>
               <div className="health-row">
                 {Array.from({ length: ui.maxHealth }, (_, index) => <i key={index} className={index < ui.health ? "health-on" : ""} />)}
-                {ui.shield > 0.05 && <span className="shield-readout">SHIELD {Math.ceil(ui.shield)}</span>}
+                {ui.shield > 0.05 && <span className="shield-readout">{tr(language, "SHIELD", "מגן")} {Math.ceil(ui.shield)}</span>}
               </div>
             </section>
             <section className="wave-readout">
-              <small>{ui.wave}</small>
-              <strong>{formatTime(ui.timeLeft)}</strong>
-              <span>{tr(language, "RIFT STABILITY", "יציבות הקרע")}</span>
+              <small>{ui.runMode === "prime" && language === "he" ? `${PRIME_MISSIONS[ui.stageId]?.code ?? "PRIME"} // ${PRIME_MISSIONS[ui.stageId]?.hebrewName ?? "שלב בונוס"}` : ui.wave}</small>
+              <strong>{ui.timeLimited ? formatTime(ui.timeLeft) : "∞"}</strong>
+              <span>{ui.timeLimited ? tr(language, "RIFT STABILITY", "יציבות הקרע") : tr(language, "MISSION TIMER OFF", "ללא הגבלת זמן")}</span>
             </section>
             <section className="hud-block score-block">
               <small>{tr(language, "SCORE", "ניקוד")}</small>
@@ -4623,7 +4869,7 @@ ONE TRUE SHAPE.", "כל חתימה.
           </div>
 
           <div className="objective-tracker">
-            <div><small>{`${tr(language, "PRIMARY", "ראשי")} // ${difficultyName(ui.difficulty, language)}`}</small><strong>{runtimeCopy(ui.objectiveLabel, language)}</strong></div>
+            <div><small>{ui.runMode === "prime" ? tr(language, "BONUS // PRIME", "בונוס // פריים") : `${tr(language, "PRIMARY", "ראשי")} // ${difficultyName(ui.difficulty, language)}`}</small><strong>{runtimeCopy(ui.objectiveLabel, language)}</strong></div>
             <span>{Math.floor(Math.min(ui.objectiveProgress, ui.objectiveTarget))}<b>/ {ui.objectiveTarget}</b></span>
             <i><b style={{ width: `${clamp(ui.objectiveProgress / Math.max(1, ui.objectiveTarget) * 100, 0, 100)}%` }} /></i>
             <small className={ui.microComplete ? "micro-objective is-complete" : "micro-objective"}>{ui.microComplete ? "✓ " : "◇ "}{microObjectiveLabel(ui.microObjective, language)} {ui.microProgress}/{ui.microTarget}</small>
@@ -4672,7 +4918,7 @@ ONE TRUE SHAPE.", "כל חתימה.
           </div>
 
           <div className="ability-hud">
-            <div className="ability-label"><span>PRISM NOVA <kbd>{displayKey(bindings.nova)}</kbd></span><small>{ui.doubleShotBuff > 0 && ui.rapidBuff > 0 ? "TWIN RAPID ARRAY ONLINE" : ui.doubleShotBuff > 0 ? `TWIN BEAM ${Math.ceil(ui.doubleShotBuff)}s` : ui.rapidBuff > 0 ? `RAPID MODULE ${Math.ceil(ui.rapidBuff)}s` : ui.charge >= 100 ? tr(language, "CORE READY // COST ◇ 1", "הליבה מוכנה // מחיר ◇ 1") : tr(language, "ABSORB FIRE TO CHARGE", "ספוג אש כדי לטעון")}</small></div>
+            <div className="ability-label"><span>PRISM NOVA <kbd>{displayKey(bindings.nova)}</kbd></span><small>{ui.doubleShotBuff > 0 && ui.rapidBuff > 0 ? "TWIN RAPID ARRAY ONLINE" : ui.doubleShotBuff > 0 ? `TWIN BEAM ${Math.ceil(ui.doubleShotBuff)}s` : ui.rapidBuff > 0 ? `RAPID MODULE ${Math.ceil(ui.rapidBuff)}s` : ui.coinsCollected >= NOVA_COIN_COST ? tr(language, "PRESS E // COST ◇ 1", "לחץ E // מחיר ◇ 1") : tr(language, "COLLECT A COIN FOR NOVA", "אסוף מטבע בשביל נובה")}</small></div>
             <i className={ui.charge >= 100 ? "charge-track is-ready" : "charge-track"}><b style={{ width: `${ui.charge}%` }} /></i>
             <strong>{Math.floor(ui.charge)}<small>%</small></strong>
             <div className="dash-chip"><span style={{ "--dash": `${ui.dash * 360}deg` } as React.CSSProperties}>{displayKey(bindings.dash)}</span><small>{ui.dash >= 0.995 ? "DASH READY" : "PHASING"}</small></div>
@@ -4702,7 +4948,7 @@ ONE TRUE SHAPE.", "כל חתימה.
             <div className="touch-controls" aria-label="Touch controls">
               <button className="refract-touch" disabled={ui.spectrumTotal <= 0} onPointerDown={(eventValue) => { eventValue.stopPropagation(); inputRef.current.refract = true; }}>REFRACT</button>
               <button className="smash-touch" disabled={ui.smash < 0.995} onPointerDown={(eventValue) => { eventValue.stopPropagation(); inputRef.current.smash = true; }}><span>SMASH</span></button>
-              <button className="nova-touch" disabled={ui.charge < 100} onPointerDown={(eventValue) => { eventValue.stopPropagation(); inputRef.current.nova = true; }}>NOVA</button>
+              <button className="nova-touch" onPointerDown={(eventValue) => { eventValue.stopPropagation(); inputRef.current.nova = true; }}>NOVA</button>
               <button className="dash-touch" disabled={ui.dash < 0.995} onPointerDown={(eventValue) => { eventValue.stopPropagation(); inputRef.current.dash = true; }}>DASH</button>
             </div>
           )}
@@ -4729,7 +4975,7 @@ ONE TRUE SHAPE.", "כל חתימה.
       {ui.mode === "nova-confirm" && (
         <section className="modal-layer nova-confirm-modal" role="dialog" aria-modal="true" aria-labelledby="nova-confirm-title" aria-describedby="nova-confirm-description">
           <div className="modal-panel compact-panel">
-            <p className="modal-kicker">{tr(language, "NOVA AUTHORIZATION // CORE READY", "אישור נובה // הליבה מוכנה")}</p>
+            <p className="modal-kicker">{tr(language, "NOVA AUTHORIZATION // PRISM COIN", "אישור נובה // מטבע פריזמה")}</p>
             <div className="nova-confirm-emblem" aria-hidden="true"><i /><b>✦</b><i /></div>
             <h2 id="nova-confirm-title">{tr(language, "DEPLOY NOVA?", "להפעיל נובה?")}</h2>
             <div className="nova-confirm-cost">
@@ -4826,7 +5072,7 @@ ONE TRUE SHAPE.", "כל חתימה.
                   ? tr(language, "CORE\nBROKEN", "הליבה\nנשברה")
                   : tr(language, "STAGE\nCLEARED", "השלב\nהושלם")
                 : ui.runMode === "prime"
-                  ? tr(language, "PRIME\nCOMPLETE", "פריים\nהושלם")
+                  ? tr(language, "BONUS\nCLEARED", "שלב בונוס\nהושלם")
                   : ui.runMode === "threat"
                     ? tr(language, "THREAT\nCONTAINED", "האיום\nנבלם")
                     : tr(language, "RIFT\nCLEARED", "הקרע\nהושלם")

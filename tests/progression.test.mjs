@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   PRIME_MISSIONS,
+  PERSISTENT_POWER_IDS,
   calculateShardReward,
   canUnlockPrime,
   maxThreatAttempt,
@@ -19,10 +20,23 @@ test("new-player progression defaults are safe and preserve legacy coins", () =>
   assert.equal(fresh.highestThreat, 0);
   assert.equal(fresh.highestThreatAvailable, 10);
   assert.deepEqual(fresh.unlockedPrimeIds, []);
+  assert.deepEqual(fresh.unlockedPowerIds, []);
 
   const migrated = migrateProgressionSave({ coins: 87, healthBonus: 2, unlockedStage: 4 });
   assert.equal(migrated.prismShards, 87);
   assert.equal(migrated.healthBonus, 2);
+});
+
+test("rare Prism Core power unlocks migrate and persist permanently", () => {
+  const restored = migrateProgressionSave(JSON.parse(JSON.stringify({
+    unlockedPowerIds: ["focus", "lance", "invalid-power"],
+  })));
+  assert.deepEqual(restored.unlockedPowerIds, ["focus", "lance"]);
+  assert.ok(restored.saveVersion >= 4);
+
+  const legacy = migrateProgressionSave({ unlockedPowers: { overclock: true, focus: false } });
+  assert.deepEqual(legacy.unlockedPowerIds, ["overclock"]);
+  assert.deepEqual(PERSISTENT_POWER_IDS, ["focus", "overclock", "lance"]);
 });
 
 test("Prism Shards and permanent Prime purchases survive serialization", () => {
@@ -57,8 +71,8 @@ test("paid Prime missions are approachable bonus stages rather than hidden Threa
     assert.ok(mission.maxActiveElites <= 1);
     assert.ok(mission.reward[0] >= 14 && mission.reward[1] > mission.reward[0]);
   }
-  assert.ok(PRIME_MISSIONS.find((mission) => mission.objective === "kills").target <= 40);
-  assert.ok(PRIME_MISSIONS.find((mission) => mission.objective === "absorb").target <= 24);
+  assert.ok(PRIME_MISSIONS.every((mission) => mission.objective === "survive" || mission.objective === "kills"));
+  assert.ok(Math.max(...PRIME_MISSIONS.filter((mission) => mission.objective === "kills").map((mission) => mission.target)) <= 40);
 });
 
 test("Threat scaling stays gradual and finite from 1 through 1000+", () => {

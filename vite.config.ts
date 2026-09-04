@@ -11,6 +11,19 @@ const { d1, r2 } = hostingConfig;
 // macOS Seatbelt blocks FSEvents, so Codex previews need polling for HMR.
 const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === "seatbelt";
 
+// Unity creates and locks generated files while the editor is open. The web
+// dev server does not depend on the embedded Unity project, so Vite/Vinext
+// should never watch it. This avoids Windows EBUSY watcher crashes from files
+// such as PrismBreak-Unity/Temp/FSTimeGet-*.
+const UNITY_WATCH_IGNORES = [
+  "PrismBreak-Unity/**",
+  "**/PrismBreak-Unity/**",
+  "**/Temp/**",
+  "**/Library/**",
+  "**/Logs/**",
+  "**/obj/**",
+];
+
 const localBindingConfig = {
   main: "./worker/index.ts",
   compatibility_flags: ["nodejs_compat"],
@@ -44,9 +57,14 @@ export default defineConfig(async () => {
   const { cloudflare } = await import("@cloudflare/vite-plugin");
 
   return {
-    server: isCodexSeatbeltSandbox
-      ? { watch: { useFsEvents: false, usePolling: true } }
-      : undefined,
+    server: {
+      watch: {
+        ignored: UNITY_WATCH_IGNORES,
+        ...(isCodexSeatbeltSandbox
+          ? { useFsEvents: false, usePolling: true }
+          : {}),
+      },
+    },
     plugins: [
       vinext(),
       sites(),

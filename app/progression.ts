@@ -18,6 +18,9 @@ export type PrimeBonusId =
   | "resonance_field"
   | "aegis_start";
 
+export const PERSISTENT_POWER_IDS = ["focus", "overclock", "lance"] as const;
+export type PersistentPowerId = (typeof PERSISTENT_POWER_IDS)[number];
+
 export interface ThreatScaling {
   enemyHealth: number;
   enemySpeed: number;
@@ -67,6 +70,7 @@ export interface ProgressionSave {
   saveVersion: number;
   prismShards: number;
   healthBonus: number;
+  unlockedPowerIds: PersistentPowerId[];
   unlockedPrimeIds: string[];
   primeBestTimes: Record<string, number>;
   highestThreat: number;
@@ -80,7 +84,7 @@ export interface ProgressionSave {
 }
 
 export const PROGRESSION_BALANCE = {
-  saveVersion: 3,
+  saveVersion: 4,
   campaignReward: { completion: 5, performanceMax: 5, comboMax: 5, perfectBonus: 3 },
   healthUpgradeCosts: [30, 65, 110, 170, 245, 335],
   threat: {
@@ -117,9 +121,9 @@ export const PRIME_MISSIONS: PrimeMissionDefinition[] = [
   },
   {
     id: "prime-3", code: "PRIME // III", name: "CHROMA HARVEST", hebrewName: "קציר כרומה",
-    description: "A generous absorption playground with slow spectrum fire, boosted resonance and a double shield.",
-    hebrewDescription: "מגרש ספיגה נדיב עם ירי ספקטרום איטי, תהודה מוגברת ומגן כפול.",
-    requiredRank: 15, unlockCost: 220, duration: 70, objective: "absorb", target: 24, reward: [32, 50],
+    description: "A generous bonus hunt with fragile chroma carriers, boosted resonance and a double shield.",
+    hebrewDescription: "ציד בונוס נדיב עם נשאי כרומה שבירים, תהודה מוגברת ומגן כפול.",
+    requiredRank: 15, unlockCost: 220, duration: 70, objective: "kills", target: 34, reward: [32, 50],
     difficulty: "cadet", maxHostiles: 18, maxActiveElites: 1,
     bonuses: ["resonance_field", "aegis_start", "drop_surge"], modifiers: [],
     scaling: { enemyHealth: 0.88, enemySpeed: 0.82, projectileSpeed: 0.72, spawnRate: 0.98, maxEnemies: 18, eliteChance: 0.015, attackRate: 1.05, dashCooldown: 0.8, integrityPenalty: 0, novaDrain: 0 },
@@ -132,10 +136,14 @@ export function migrateProgressionSave(raw: unknown): ProgressionSave {
   const legacyCoins = Math.max(0, Math.floor(Number(value.coins) || 0));
   const prismShards = Math.max(0, Math.floor(Number(value.prismShards) || legacyCoins));
   const primeBestTimes = value.primeBestTimes && typeof value.primeBestTimes === "object" ? value.primeBestTimes as Record<string, number> : {};
+  const storedPowerIds = new Set(Array.isArray(value.unlockedPowerIds) ? value.unlockedPowerIds.filter((id): id is string => typeof id === "string") : []);
+  const legacyPowerMap = value.unlockedPowers && typeof value.unlockedPowers === "object" ? value.unlockedPowers as Record<string, unknown> : {};
+  const unlockedPowerIds = PERSISTENT_POWER_IDS.filter((id) => storedPowerIds.has(id) || legacyPowerMap[id] === true);
   return {
     saveVersion: PROGRESSION_BALANCE.saveVersion,
     prismShards,
     healthBonus: clamp(Math.floor(Number(value.healthBonus) || 0), 0, PROGRESSION_BALANCE.healthUpgradeCosts.length),
+    unlockedPowerIds,
     unlockedPrimeIds: Array.isArray(value.unlockedPrimeIds) ? value.unlockedPrimeIds.filter((id): id is string => typeof id === "string") : [],
     primeBestTimes,
     highestThreat,
